@@ -23,7 +23,7 @@ export default async function LoginPage() {
           <p className="mt-2 text-sm text-muted-foreground">Renovation operations from lead to closeout.</p>
         </div>
 
-        <LoginForm />
+        <LoginForm googleEnabled={!!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)} />
 
         {showDemo && (
           <div className="mt-6 rounded-lg border border-green-200 bg-green-50 p-4">

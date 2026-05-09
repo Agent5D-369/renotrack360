@@ -1,14 +1,24 @@
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+
+const googleProvider =
+  process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
+    ? GoogleProvider({
+        clientId: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      })
+    : null;
 
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
   providers: [
+    ...(googleProvider ? [googleProvider] : []),
     CredentialsProvider({
       name: "Admin login",
       credentials: {
@@ -53,6 +63,44 @@ export const authOptions: NextAuthOptions = {
     })
   ],
   callbacks: {
+    async signIn({ user, account }) {
+      // For OAuth sign-ins, provision an org if this is a new user
+      if (account?.provider === "google" && user.email) {
+        const existing = await prisma.user.findUnique({ where: { email: user.email } });
+        if (!existing?.organizationId) {
+          const domain = user.email.split("@")[1] ?? "mycompany";
+          const orgName = domain.split(".")[0] ?? "My Organization";
+          const org = await prisma.organization.create({
+            data: { name: orgName.charAt(0).toUpperCase() + orgName.slice(1) }
+          });
+          await prisma.user.update({
+            where: { email: user.email },
+            data: { organizationId: org.id, role: "OWNER" }
+          });
+          await prisma.membership.create({
+            data: {
+              userId: existing?.id ?? user.id!,
+              organizationId: org.id,
+              role: "OWNER",
+              status: "ACTIVE",
+              acceptedAt: new Date()
+            }
+          }).catch(() => null);
+          await prisma.subscription.create({
+            data: {
+              organizationId: org.id,
+              planTier: "PRO",
+              status: "TRIALING",
+              trialEndsAt: new Date(Date.now() + 14 * 86400000),
+              activeJobLimit: 25,
+              monthlyEstimateLimit: 250,
+              userLimit: 5
+            }
+          }).catch(() => null);
+        }
+      }
+      return true;
+    },
     async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id;
@@ -62,7 +110,6 @@ export const authOptions: NextAuthOptions = {
         });
         token.uiMode = dbUser?.uiMode ?? "POWER";
         token.organizationId = dbUser?.organizationId ?? null;
-        // Super admin: ADMIN_EMAIL env var holders get platform-wide access
         const superAdmins = (process.env.SUPER_ADMIN_EMAILS ?? process.env.ADMIN_EMAIL ?? "")
           .toLowerCase().split(",").map(s => s.trim()).filter(Boolean);
         token.isSuperAdmin = superAdmins.includes((dbUser?.email ?? "").toLowerCase());
