@@ -795,20 +795,19 @@ async function main() {
     }
   });
 
-  const jobAmount = Number(quotes[2].finalQuoteAmount ?? quotes[2].totalTarget);
   const job = await prisma.job.create({
     data: {
       organizationId: org.id,
       jobName: "Hartmann Ave - Kitchen + Bath Renovation",
-      clientProfileId: profiles[2].id,
+      clientProfileId: profiles[0].id,   // Sarah Hartmann
       propertyId: properties[3].id,
       approvedQuoteId: quotes[2].id,
       jobStatus: "ROUGH_IN",
       startDate: new Date(Date.now() - 42 * 86400000),
       targetCompletion: new Date(Date.now() + 21 * 86400000),
-      contractAmount: jobAmount,
-      amountPaid: 22500,
-      balanceDue: jobAmount - 22500,
+      contractAmount: 112400,
+      amountPaid: 44900,
+      balanceDue: 67500,
       activePhase: renovationPhases[5],
       weeklyReportDue: new Date(Date.now() + 2 * 86400000),
       permitStatus: "Building permit issued · inspection pending",
