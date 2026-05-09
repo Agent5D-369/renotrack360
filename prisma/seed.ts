@@ -1018,16 +1018,48 @@ async function main() {
     ]
   });
 
+  // Renovation photo URLs (Unsplash stable CDN — renovation & construction)
+  const PHOTOS = {
+    kitchenBefore: "https://images.unsplash.com/photo-1556911220-bff31c812dba?w=900&q=80&auto=format&fit=crop",
+    bathBefore:    "https://images.unsplash.com/photo-1516455590571-18256e5bb9ff?w=900&q=80&auto=format&fit=crop",
+    framing:       "https://images.unsplash.com/photo-1503387762-592deb58ef4e?w=900&q=80&auto=format&fit=crop",
+    roughIn:       "https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=900&q=80&auto=format&fit=crop",
+    drywall:       "https://images.unsplash.com/photo-1544986581-efac5e8c3975?w=900&q=80&auto=format&fit=crop",
+    tileWork:      "https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=900&q=80&auto=format&fit=crop",
+    kitchenAfter:  "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=900&q=80&auto=format&fit=crop",
+    kitchenAfter2: "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=900&q=80&auto=format&fit=crop",
+    bathAfter:     "https://images.unsplash.com/photo-1552321554-5fefe8c9ef14?w=900&q=80&auto=format&fit=crop",
+    flooring:      "https://images.unsplash.com/photo-1581858726788-75bc0f6a952d?w=900&q=80&auto=format&fit=crop",
+    exterior:      "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=900&q=80&auto=format&fit=crop",
+    cabinetry:     "https://images.unsplash.com/photo-1556909172-54557c7e4fb7?w=900&q=80&auto=format&fit=crop",
+  };
+
+  // Job gallery photos — BEFORE / DURING / AFTER
+  await prisma.jobPhoto.createMany({
+    data: [
+      { jobId: job.id, url: PHOTOS.kitchenBefore, label: "BEFORE", phase: "Pre-Construction", roomArea: "Kitchen", caption: "Original kitchen — dated cabinets, damaged countertop, no island. Full gut scope approved.", takenAt: new Date(Date.now() - 43 * 86400000) },
+      { jobId: job.id, url: PHOTOS.bathBefore, label: "BEFORE", phase: "Pre-Construction", roomArea: "Primary Bath", caption: "Primary bath before demo — original vanity, cultured marble, failing shower pan.", takenAt: new Date(Date.now() - 43 * 86400000) },
+      { jobId: job.id, url: PHOTOS.framing, label: "DURING", phase: "Framing", roomArea: "Kitchen", caption: "Kitchen island framing in progress. New structural opening per approved plans.", takenAt: new Date(Date.now() - 32 * 86400000) },
+      { jobId: job.id, url: PHOTOS.roughIn, label: "DURING", phase: "Rough-In", roomArea: "Kitchen", caption: "Electrical rough-in for island and under-cabinet lighting. Inspector sign-off pending.", takenAt: new Date(Date.now() - 21 * 86400000) },
+      { jobId: job.id, url: PHOTOS.drywall, label: "DURING", phase: "Drywall & Surfaces", roomArea: "Primary Bath", caption: "Cement backer board installed. Waterproofing membrane applied and cured — ready for tile.", takenAt: new Date(Date.now() - 14 * 86400000) },
+      { jobId: job.id, url: PHOTOS.tileWork, label: "DURING", phase: "Finishes", roomArea: "Primary Bath", caption: "Shower wall tile layout — 12×24 large format. Lippage within spec. Grout next.", takenAt: new Date(Date.now() - 7 * 86400000) },
+      { jobId: job.id, url: PHOTOS.kitchenAfter, label: "AFTER", phase: "Final Walkthrough", roomArea: "Kitchen", caption: "Kitchen complete — white shaker cabinets, quartz countertop, new island. Client approved.", takenAt: new Date(Date.now() - 1 * 86400000) },
+      { jobId: job.id, url: PHOTOS.bathAfter, label: "AFTER", phase: "Final Walkthrough", roomArea: "Primary Bath", caption: "Primary bath complete — large format tile, matte black fixtures, frameless glass shower.", takenAt: new Date(Date.now() - 1 * 86400000) },
+      { jobId: job.id, url: PHOTOS.flooring, label: "AFTER", phase: "Final Walkthrough", roomArea: "Main Floor", caption: "Hardwood refinish complete — living room and hallway. Three coats satin polyurethane.", takenAt: new Date(Date.now() - 1 * 86400000) },
+    ]
+  });
+
   await prisma.fieldReport.create({
     data: {
       jobId: job.id,
       reportDate: new Date(Date.now() - 3 * 86400000),
-      crewSummary: "Marcus + tile sub (Whitaker). Electrical rough-in complete.",
-      workCompleted: "Completed electrical rough-in sign-off. Began setting backer board in primary bath. Confirmed waterproofing product.",
-      blockers: "Countertop template measurement waiting on final cabinet install. ETA Thursday.",
-      materialsUsed: "Backer board 48 sheets, thin-set, waterproofing membrane.",
-      equipmentUsed: "Shop vac, laser level, demo hand tools.",
-      weatherNotes: "Clear",
+      crewSummary: "Marcus Webb + Ben Whitaker (tile sub). Electrical rough-in complete and signed off.",
+      workCompleted: "Electrical rough-in inspection passed. Set 48 sheets backer board in primary bath. Applied waterproofing membrane — first coat complete. Confirmed tile layout with Whitaker.",
+      blockers: "Countertop template measurement waiting on final cabinet install. ETA Thursday. Countertop lead time 10 business days after template.",
+      materialsUsed: "Backer board 48 sheets, thin-set 4 bags, Schluter Kerdi waterproofing membrane.",
+      equipmentUsed: "Shop vac, Bosch laser level, demo hand tools, mixing drill.",
+      weatherNotes: "Clear — no weather impact on occupied renovation.",
+      photos: [PHOTOS.drywall, PHOTOS.roughIn, PHOTOS.tileWork],
       clientVisible: true
     }
   });
@@ -1414,48 +1446,58 @@ async function main() {
     ]
   });
 
-  for (let i = 0; i < 2; i++) {
-    await prisma.weeklyReport.create({
-      data: {
-        jobId: job.id,
-        weekEnding: new Date(Date.now() - i * 7 * 86400000),
-        workCompleted: "Completed site coordination, material review, and phase planning.",
-        issuesFound: "One selection requires owner decision.",
-        decisionsNeeded: "Confirm tile allowance and fixture finish.",
-        budgetNotes: "No budget change this week.",
-        scheduleNotes: "Schedule remains within planning range.",
-        nextWeekPlan: "Finalize materials and start rough trade coordination.",
-        clientSummary: "Progress is steady. Current focus is locking selections before field work accelerates.",
-        internalNotes: "Keep change-order discipline tight."
-      }
-    });
+  const weeklyReportData = [
+    {
+      weekEnding: new Date(Date.now() - 0 * 7 * 86400000),
+      workCompleted: "Tile work in primary bath is 80% complete. Kitchen cabinet punch list underway. Countertop template completed — fabrication ordered.",
+      issuesFound: "Tile grout joint width variance on one wall — Whitaker corrected same day. No impact to schedule.",
+      decisionsNeeded: "Client needs to select cabinet pull finish (matte black vs brushed nickel) before hardware order.",
+      budgetNotes: "Subfloor change order ($2,800) pending client signature. No other budget variance this week.",
+      scheduleNotes: "On track for target completion. Countertop install in 12 days — countertop is the critical path.",
+      nextWeekPlan: "Complete tile and grout in bath. Start kitchen backsplash. Coordinate plumbing trim-out after countertop template.",
+      clientSummary: "Great progress this week. Bath tile is almost done and looking sharp. Kitchen cabinets are punched out. Next milestone is countertop install — once that's in, plumbing trim-out follows fast.",
+      internalNotes: "Protect change order discipline. Three unsigned COs — get signatures before continuing scope.",
+      photos: [PHOTOS.tileWork, PHOTOS.cabinetry, PHOTOS.kitchenAfter2],
+      sentAt: new Date(Date.now() - 1 * 86400000)
+    },
+    {
+      weekEnding: new Date(Date.now() - 1 * 7 * 86400000),
+      workCompleted: "Electrical rough-in inspection passed. Primary bath waterproofing complete — backer board and Kerdi membrane. Kitchen cabinet delivery and staging complete.",
+      issuesFound: "Soft spot in subfloor at shower base — water damage from original pan failure. Documented and change order prepared.",
+      decisionsNeeded: "Tile layout direction for shower walls needs client approval before Whitaker starts install.",
+      budgetNotes: "Subfloor repair change order submitted: $2,800 added cost, 2 days added. Awaiting signature.",
+      scheduleNotes: "Waterproofing cure time 24 hours — tile can start Wednesday. Overall schedule still on track.",
+      nextWeekPlan: "Start tile installation in primary bath. Continue kitchen cabinet install. Template countertops by Friday.",
+      clientSummary: "The rough-in inspection passed — electrical and plumbing are signed off. Bath waterproofing is done and cured. We found some old water damage under the shower base and we're handling it — change order in your inbox for review.",
+      internalNotes: "Ensure subfloor CO is signed before waterproofing phase closes out.",
+      photos: [PHOTOS.drywall, PHOTOS.roughIn, PHOTOS.framing],
+      sentAt: new Date(Date.now() - 8 * 86400000)
+    }
+  ];
+  for (const report of weeklyReportData) {
+    await prisma.weeklyReport.create({ data: { jobId: job.id, ...report } });
   }
 
   await prisma.changeOrder.createMany({
     data: [
-      { jobId: job.id, clientProfileId: profiles[2].id, changeOrderTitle: "Upgrade primary bath tile", addedCost: 4200, addedTime: 3, status: "SENT", reason: "Client selection upgrade." },
-      { jobId: job.id, clientProfileId: profiles[2].id, changeOrderTitle: "Replace concealed subfloor damage", addedCost: 2800, addedTime: 2, status: "DRAFT", fieldCondition: "Damage found after review." }
+      { jobId: job.id, clientProfileId: profiles[2].id, changeOrderTitle: "Upgrade primary bath tile — textured porcelain", addedCost: 4200, addedTime: 3, status: "SENT", reason: "Client selected above-allowance tile. Approved verbally, awaiting written sign-off." },
+      { jobId: job.id, clientProfileId: profiles[2].id, changeOrderTitle: "Replace concealed subfloor damage — bath wet area", addedCost: 2800, addedTime: 2, status: "SENT", fieldCondition: "Soft subfloor discovered after demo. Water intrusion from failed shower pan. Requires sistering and board replacement before waterproofing can proceed." },
+      { jobId: job.id, clientProfileId: profiles[2].id, changeOrderTitle: "Add under-cabinet lighting — kitchen peninsula", addedCost: 1850, addedTime: 1, status: "SENT", reason: "Owner requested during electrical rough-in walkthrough. Easiest point to add before drywall closes." }
     ]
   });
 
+  // INV-1001: $25k total, $15k paid → $10k balance (PARTIALLY_PAID)
   const invoice = await prisma.invoice.upsert({
     where: { invoiceNumber: "INV-1001" },
-    update: {
-      jobId: job.id,
-      clientProfileId: profiles[2].id
-    },
+    update: { jobId: job.id, clientProfileId: profiles[2].id },
     create: {
       jobId: job.id,
       clientProfileId: profiles[2].id,
       invoiceNumber: "INV-1001",
       dueDate: new Date(Date.now() + 7 * 86400000),
-      subtotal: 25000,
-      tax: 0,
-      total: 25000,
-      amountPaid: 15000,
-      balanceDue: 10000,
+      subtotal: 25000, tax: 0, total: 25000, amountPaid: 15000, balanceDue: 10000,
       status: "PARTIALLY_PAID",
-      notes: "Deposit and mobilization invoice."
+      notes: "Mobilization and deposit invoice. Balance due at rough-in completion."
     }
   });
 
@@ -1463,15 +1505,52 @@ async function main() {
   if (!existingSeedPayment) {
     await prisma.payment.create({
       data: {
-        invoiceId: invoice.id,
-        clientProfileId: profiles[2].id,
-        amount: 15000,
-        method: "ACH",
-        status: "COMPLETED",
-        notes: "Seed ACH payment."
+        invoiceId: invoice.id, clientProfileId: profiles[2].id,
+        amount: 15000, method: "ACH", status: "COMPLETED", notes: "Seed ACH payment."
       }
     });
   }
+
+  // INV-1002: rough-in progress payment — $22,500 outstanding (PARTIALLY_PAID)
+  const inv2 = await prisma.invoice.upsert({
+    where: { invoiceNumber: "INV-1002" },
+    update: { jobId: job.id, clientProfileId: profiles[2].id },
+    create: {
+      jobId: job.id, clientProfileId: profiles[2].id,
+      invoiceNumber: "INV-1002",
+      dueDate: new Date(Date.now() - 3 * 86400000),
+      subtotal: 28000, tax: 0, total: 28000, amountPaid: 5500, balanceDue: 22500,
+      status: "PARTIALLY_PAID",
+      notes: "Rough-in progress payment. $22,500 balance due on receipt. Electrical and plumbing rough-in complete."
+    }
+  });
+  await prisma.payment.create({
+    data: {
+      invoiceId: inv2.id, clientProfileId: profiles[2].id,
+      amount: 5500, method: "CHECK", status: "COMPLETED", notes: "Partial payment received."
+    }
+  }).catch(() => null);
+
+  // INV-1003: Cedar Ridge Unit A — overdue $14,700
+  const inv3 = await prisma.invoice.upsert({
+    where: { invoiceNumber: "INV-1003" },
+    update: { clientProfileId: profiles[8].id },
+    create: {
+      clientProfileId: profiles[8].id,
+      invoiceNumber: "INV-1003",
+      dueDate: new Date(Date.now() - 12 * 86400000),
+      subtotal: 18700, tax: 0, total: 18700, amountPaid: 4000, balanceDue: 14700,
+      status: "OVERDUE" as never,
+      notes: "Cedar Ridge Unit A — flooring and paint scope. Invoice past due 12 days. Follow up required."
+    }
+  });
+  await prisma.payment.create({
+    data: {
+      invoiceId: inv3.id, clientProfileId: profiles[8].id,
+      amount: 4000, method: "ZELLE", status: "COMPLETED", notes: "Partial payment via Zelle."
+    }
+  }).catch(() => null);
+  // Outstanding total: $10,000 + $22,500 + $14,700 = $47,200 ✓
 
   await prisma.financing.create({
     data: {
@@ -1486,15 +1565,99 @@ async function main() {
     }
   });
 
-  await prisma.activity.create({
+  // ── Two additional active jobs for the watchlist ────────────────────────────
+
+  const job2 = await prisma.job.create({
     data: {
-      relatedProfileId: profiles[0].id,
-      relatedLeadId: leads[0].id,
-      activityType: "FOLLOW_UP",
-      subject: "Follow up on investor duplex scope",
-      body: "Ask for target rent and hold period.",
-      dueDate: new Date()
+      organizationId: org.id,
+      jobName: "Cedar Ridge Ln - Duplex Unit A Turn",
+      clientProfileId: profiles[8].id,
+      propertyId: properties[2].id,
+      jobStatus: "DEMO",
+      startDate: new Date(Date.now() - 10 * 86400000),
+      targetCompletion: new Date(Date.now() + 38 * 86400000),
+      contractAmount: 54800,
+      amountPaid: 18000,
+      balanceDue: 36800,
+      activePhase: "Demolition / Prep",
+      weeklyReportDue: new Date(Date.now() - 1 * 86400000),
+      riskLevel: "LOW",
+      notes: "Investor turn — Unit A. Flooring, kitchen refresh, paint. Straightforward scope.",
+      phases: {
+        create: renovationPhaseDetails.map(([phaseName, description], index) => ({
+          phaseNumber: index + 1, phaseName,
+          status: index < 1 ? "COMPLETE" : index === 1 ? "IN_PROGRESS" : "NOT_STARTED",
+          clientUpdate: description,
+          completionCriteria: "Photos, scope confirmation, risk review, and client-ready update are complete."
+        }))
+      }
+    },
+    include: { phases: true }
+  });
+
+  await prisma.jobPhoto.createMany({
+    data: [
+      { jobId: job2.id, url: PHOTOS.exterior, label: "BEFORE", phase: "Pre-Construction", roomArea: "Exterior", caption: "Unit A exterior before work begins. Good structure, needs cosmetic refresh.", takenAt: new Date(Date.now() - 11 * 86400000) },
+      { jobId: job2.id, url: PHOTOS.framing, label: "DURING", phase: "Demolition / Prep", roomArea: "Kitchen", caption: "Kitchen demo in progress. Removing dated cabinets and laminate flooring.", takenAt: new Date(Date.now() - 3 * 86400000) },
+    ]
+  });
+
+  const job3 = await prisma.job.create({
+    data: {
+      organizationId: org.id,
+      jobName: "Mesa Vista Dr - Kitchen Expansion",
+      clientProfileId: profiles[3].id,
+      propertyId: properties[3].id,
+      jobStatus: "FINISHES",
+      startDate: new Date(Date.now() - 63 * 86400000),
+      targetCompletion: new Date(Date.now() + 7 * 86400000),
+      contractAmount: 89400,
+      amountPaid: 71500,
+      balanceDue: 17900,
+      activePhase: "Finish Install",
+      weeklyReportDue: new Date(Date.now() + 3 * 86400000),
+      riskLevel: "MEDIUM",
+      notes: "Luxury home kitchen expansion. Custom cabinetry, quartz, appliance package. Approaching closeout.",
+      phases: {
+        create: renovationPhaseDetails.map(([phaseName, description], index) => ({
+          phaseNumber: index + 1, phaseName,
+          status: index < 7 ? "COMPLETE" : index === 7 ? "IN_PROGRESS" : "NOT_STARTED",
+          clientUpdate: description,
+          completionCriteria: "Photos, scope confirmation, risk review, and client-ready update are complete."
+        }))
+      }
+    },
+    include: { phases: true }
+  });
+
+  await prisma.jobPhoto.createMany({
+    data: [
+      { jobId: job3.id, url: PHOTOS.kitchenBefore, label: "BEFORE", phase: "Pre-Construction", roomArea: "Kitchen", caption: "Original kitchen — limited layout, dated appliances. Expansion adds 140 sq ft.", takenAt: new Date(Date.now() - 64 * 86400000) },
+      { jobId: job3.id, url: PHOTOS.cabinetry, label: "DURING", phase: "Finish Install", roomArea: "Kitchen", caption: "Custom inset cabinet install in progress — all uppers hung and level.", takenAt: new Date(Date.now() - 5 * 86400000) },
+      { jobId: job3.id, url: PHOTOS.kitchenAfter, label: "AFTER", phase: "Finish Install", roomArea: "Kitchen", caption: "Kitchen near-complete — countertop installed, appliances staged for delivery Thursday.", takenAt: new Date(Date.now() - 2 * 86400000) },
+    ]
+  });
+
+  // ── Testimonials / feedback (drive the proof engine section) ────────────────
+  await prisma.feedbackRequest.updateMany({
+    where: { jobId: job.id, requestType: "Mid-project client pulse" },
+    data: {
+      status: "RECEIVED",
+      rating: 5,
+      feedback: "Communication has been exceptional. We always know what's happening without having to ask.",
+      publicTestimonial: "Marcus keeps us fully in the loop every week. The reports are clear, the photos are great, and when we needed a change order they had it documented and to us the same day. Best contractor experience we've ever had."
     }
+  });
+
+  // ── Rich activity feed for dashboard follow-up queue ────────────────────────
+  await prisma.activity.createMany({
+    data: [
+      { relatedProfileId: profiles[0].id, relatedLeadId: leads[0].id, activityType: "FOLLOW_UP", subject: "Follow up on investor duplex scope", body: "Andre confirmed budget. Ask about Unit B timing and whether he wants same scope.", dueDate: new Date(Date.now() - 1 * 86400000) },
+      { relatedProfileId: profiles[1].id, activityType: "CALL", subject: "Check in with Diego on Morales listing referral", body: "Diego referred the Morales pre-list kitchen. Call to confirm timeline and whether they need design consult.", dueDate: new Date(Date.now()) },
+      { relatedProfileId: profiles[5].id, activityType: "EMAIL", subject: "Send Capitol City PM portfolio summary", body: "Rachel requested a summary of investor turn work. Send case study PDF and recent project photos.", dueDate: new Date(Date.now() + 1 * 86400000) },
+      { relatedLeadId: leads[3].id, activityType: "FOLLOW_UP", subject: "Master bath walkthrough prep — confirm scope areas", body: "Client wants to expand into closet. Confirm structural impact and whether permit is needed.", dueDate: new Date(Date.now() + 2 * 86400000) },
+      { relatedLeadId: leads[5].id, activityType: "FOLLOW_UP", subject: "Morales pre-list kitchen — send estimate draft", body: "Estimate is ready to review. Send for client feedback before finalizing.", dueDate: new Date(Date.now() + 1 * 86400000) },
+    ]
   });
 
   const allJobs = await prisma.job.findMany({ select: { id: true } });
