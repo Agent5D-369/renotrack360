@@ -7,6 +7,14 @@ import { dashboardFilters } from "@/lib/constants";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
+const FOLLOW_UP_LABELS: Record<string, string> = {
+  CONFIRM_RECEIVED: "Confirm received",
+  ANSWER_QUESTIONS: "Answer questions",
+  DECISION_TIMELINE: "Decision timeline",
+  FINAL_CHECK_IN: "Final check-in",
+  NURTURE: "Nurture",
+};
+
 export default async function TodayPage() {
   const session = await getServerSession(authOptions);
   const uiMode = (session?.user as { uiMode?: string } | undefined)?.uiMode ?? "POWER";
@@ -227,7 +235,7 @@ export default async function TodayPage() {
                     <Link key={followUp.id} href={`/estimates/${followUp.estimateId}`} className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2.5 transition hover:bg-muted/50">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold">{followUp.estimate.clientProfile?.profileName ?? "Client"}</p>
-                        <p className="text-xs text-muted-foreground">{followUp.estimate.estimateNumber} · {followUp.followUpType.replaceAll("_", " ")}</p>
+                        <p className="text-xs text-muted-foreground">{followUp.estimate.estimateNumber} · {FOLLOW_UP_LABELS[followUp.followUpType] ?? followUp.followUpType.replaceAll("_", " ").toLowerCase()}</p>
                       </div>
                       <span className={["shrink-0 text-xs font-bold", isOverdue ? "text-red-600" : "text-muted-foreground"].join(" ")}>{isOverdue ? "Overdue · " : ""}{dateShort(followUp.dueDate)}</span>
                     </Link>

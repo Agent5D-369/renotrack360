@@ -578,15 +578,19 @@ async function main() {
     );
   }
 
+  // Quote clients: Nina Okafor (homeowner), Andre King (investor), Sarah Hartmann (approved/job)
+  const quoteClientProfiles = [profiles[2], profiles[8], profiles[0]];
+  const quoteNames = ["Okafor - Full Interior Kitchen + Bath Remodel", "King - Cedar Ridge Unit A Investor Turn", "Hartmann Ave - Kitchen and Primary Bath"];
+  const quoteLeads = [leads[2], leads[4], leads[0]];
   const quotes = [];
   for (let i = 0; i < 3; i++) {
     const quote = await prisma.quote.create({
       data: {
         organizationId: org.id,
-        quoteName: ["Hartmann - Kitchen and Primary Bath", "King - Cedar Ridge Unit A", "Mesa Vista Kitchen Expansion"][i],
-        clientProfileId: profiles[i].id,
+        quoteName: quoteNames[i],
+        clientProfileId: quoteClientProfiles[i].id,
         propertyId: properties[i].id,
-        leadId: leads[i].id,
+        leadId: quoteLeads[i].id,
         quoteStatus: i === 2 ? "APPROVED" : "PRICING",
         projectType: "Kitchen, bath, paint, flooring",
         budgetRange: "$75k-$150k",
@@ -1511,46 +1515,7 @@ async function main() {
     });
   }
 
-  // INV-1002: rough-in progress payment — $22,500 outstanding (PARTIALLY_PAID)
-  const inv2 = await prisma.invoice.upsert({
-    where: { invoiceNumber: "INV-1002" },
-    update: { jobId: job.id, clientProfileId: profiles[2].id },
-    create: {
-      jobId: job.id, clientProfileId: profiles[2].id,
-      invoiceNumber: "INV-1002",
-      dueDate: new Date(Date.now() - 3 * 86400000),
-      subtotal: 28000, tax: 0, total: 28000, amountPaid: 5500, balanceDue: 22500,
-      status: "PARTIALLY_PAID",
-      notes: "Rough-in progress payment. $22,500 balance due on receipt. Electrical and plumbing rough-in complete."
-    }
-  });
-  await prisma.payment.create({
-    data: {
-      invoiceId: inv2.id, clientProfileId: profiles[2].id,
-      amount: 5500, method: "CHECK", status: "COMPLETED", notes: "Partial payment received."
-    }
-  }).catch(() => null);
-
-  // INV-1003: Cedar Ridge Unit A — overdue $14,700
-  const inv3 = await prisma.invoice.upsert({
-    where: { invoiceNumber: "INV-1003" },
-    update: { clientProfileId: profiles[8].id },
-    create: {
-      clientProfileId: profiles[8].id,
-      invoiceNumber: "INV-1003",
-      dueDate: new Date(Date.now() - 12 * 86400000),
-      subtotal: 18700, tax: 0, total: 18700, amountPaid: 4000, balanceDue: 14700,
-      status: "OVERDUE" as never,
-      notes: "Cedar Ridge Unit A — flooring and paint scope. Invoice past due 12 days. Follow up required."
-    }
-  });
-  await prisma.payment.create({
-    data: {
-      invoiceId: inv3.id, clientProfileId: profiles[8].id,
-      amount: 4000, method: "ZELLE", status: "COMPLETED", notes: "Partial payment via Zelle."
-    }
-  }).catch(() => null);
-  // Outstanding total: $10,000 + $22,500 + $14,700 = $47,200 ✓
+  // INV-1002 and INV-1003 created below after job2/job3 are declared
 
   await prisma.financing.create({
     data: {
@@ -1638,6 +1603,46 @@ async function main() {
     ]
   });
 
+  // ── Additional invoices — now that job2 exists ───────────────────────────────
+  await prisma.invoice.deleteMany({ where: { invoiceNumber: { in: ["INV-1002", "INV-1003"] } } });
+
+  // INV-1002: Hartmann Ave rough-in progress — $22,500 outstanding
+  const inv2 = await prisma.invoice.create({
+    data: {
+      jobId: job.id, clientProfileId: profiles[0].id,
+      invoiceNumber: "INV-1002",
+      dueDate: new Date(Date.now() - 3 * 86400000),
+      subtotal: 28000, tax: 0, total: 28000, amountPaid: 5500, balanceDue: 22500,
+      status: "PARTIALLY_PAID",
+      notes: "Rough-in progress payment. $22,500 balance due on receipt. Electrical and plumbing rough-in complete and inspected."
+    }
+  });
+  await prisma.payment.create({
+    data: {
+      invoiceId: inv2.id, clientProfileId: profiles[0].id,
+      amount: 5500, method: "CHECK", status: "COMPLETED", notes: "Partial payment — check received."
+    }
+  });
+
+  // INV-1003: Cedar Ridge Unit A — Andre King, $14,700 overdue
+  const inv3 = await prisma.invoice.create({
+    data: {
+      jobId: job2.id, clientProfileId: profiles[8].id,
+      invoiceNumber: "INV-1003",
+      dueDate: new Date(Date.now() - 12 * 86400000),
+      subtotal: 18700, tax: 0, total: 18700, amountPaid: 4000, balanceDue: 14700,
+      status: "SENT",
+      notes: "Cedar Ridge Unit A — flooring and paint scope. Invoice past due 12 days. Call Andre re: payment timing."
+    }
+  });
+  await prisma.payment.create({
+    data: {
+      invoiceId: inv3.id, clientProfileId: profiles[8].id,
+      amount: 4000, method: "ZELLE", status: "COMPLETED", notes: "Partial payment via Zelle at mobilization."
+    }
+  });
+  // Outstanding total: INV-1001 $10k + INV-1002 $22.5k + INV-1003 $14.7k = $47,200 ✓
+
   // ── Testimonials / feedback (drive the proof engine section) ────────────────
   await prisma.feedbackRequest.updateMany({
     where: { jobId: job.id, requestType: "Mid-project client pulse" },
@@ -1649,14 +1654,19 @@ async function main() {
     }
   });
 
-  // ── Rich activity feed for dashboard follow-up queue ────────────────────────
+  // ── Rich activity feed — every entry has a DIFFERENT person so dashboard looks varied ─────
   await prisma.activity.createMany({
     data: [
-      { relatedProfileId: profiles[0].id, relatedLeadId: leads[0].id, activityType: "FOLLOW_UP", subject: "Follow up on investor duplex scope", body: "Andre confirmed budget. Ask about Unit B timing and whether he wants same scope.", dueDate: new Date(Date.now() - 1 * 86400000) },
-      { relatedProfileId: profiles[1].id, activityType: "CALL", subject: "Check in with Diego on Morales listing referral", body: "Diego referred the Morales pre-list kitchen. Call to confirm timeline and whether they need design consult.", dueDate: new Date(Date.now()) },
-      { relatedProfileId: profiles[5].id, activityType: "EMAIL", subject: "Send Capitol City PM portfolio summary", body: "Rachel requested a summary of investor turn work. Send case study PDF and recent project photos.", dueDate: new Date(Date.now() + 1 * 86400000) },
-      { relatedLeadId: leads[3].id, activityType: "FOLLOW_UP", subject: "Master bath walkthrough prep — confirm scope areas", body: "Client wants to expand into closet. Confirm structural impact and whether permit is needed.", dueDate: new Date(Date.now() + 2 * 86400000) },
-      { relatedLeadId: leads[5].id, activityType: "FOLLOW_UP", subject: "Morales pre-list kitchen — send estimate draft", body: "Estimate is ready to review. Send for client feedback before finalizing.", dueDate: new Date(Date.now() + 1 * 86400000) },
+      // Overdue — shows in red on dashboard
+      { relatedProfileId: profiles[8].id, relatedLeadId: leads[4].id, activityType: "FOLLOW_UP", subject: "Follow up: King — Cedar Ridge Unit B timing", body: "Andre confirmed Unit A budget. Ask about Unit B scope and whether he wants to schedule a walkthrough now.", dueDate: new Date(Date.now() - 1 * 86400000) },
+      // Due today
+      { relatedProfileId: profiles[1].id, activityType: "CALL", subject: "Call Diego Vega — confirm Morales listing referral", body: "Diego referred the Morales pre-list kitchen. Call to lock timeline and ask whether the client needs a design consult first.", dueDate: new Date(Date.now()) },
+      // Due tomorrow
+      { relatedProfileId: profiles[5].id, activityType: "EMAIL", subject: "Send Rachel Torres — Flipside investor portfolio PDF", body: "Capitol City PM requested a summary of recent investor turns. Send PDF with Cedar Ridge before/after photos and ROI notes.", dueDate: new Date(Date.now() + 1 * 86400000) },
+      // Due in 2 days
+      { relatedProfileId: profiles[7].id, activityType: "FOLLOW_UP", subject: "Carol Park — request Google review for Mesa Vista", body: "Mesa Vista kitchen is wrapping up. This is the right moment to ask Carol for a Google review and testimonial.", dueDate: new Date(Date.now() + 2 * 86400000) },
+      // Due in 3 days
+      { relatedProfileId: profiles[4].id, activityType: "EMAIL", subject: "Priya Desai — tile selection decision needed this week", body: "Priya is designing the Brewster master bath expansion. Selections are due before Whitaker can schedule tile install.", dueDate: new Date(Date.now() + 3 * 86400000) },
     ]
   });
 
