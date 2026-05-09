@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 42 26% 97%;
+  --foreground: 222 28% 12%;
+  --muted: 42 18% 91%;
+  --muted-foreground: 220 10% 42%;
+  --border: 38 20% 84%;
+  --primary: 161 74% 28%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 30 88% 55%;
+  --accent-foreground: 222 28% 12%;
+  --destructive: 0 72% 45%;
+  --surface: 0 0% 100%;
+  --success: 147 70% 28%;
+  --warning: 34 92% 42%;
+}
+
+.theme-flipside-field-light {
+  --background: 42 26% 97%;
+  --foreground: 222 28% 12%;
+  --muted: 42 18% 91%;
+  --muted-foreground: 220 10% 42%;
+  --border: 38 20% 84%;
+  --primary: 161 74% 28%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 30 88% 55%;
+  --accent-foreground: 222 28% 12%;
+  --surface: 0 0% 100%;
+}
+
+.theme-clean-contractor {
+  --background: 210 40% 98%;
+  --foreground: 222 47% 11%;
+  --muted: 210 40% 93%;
+  --muted-foreground: 215 16% 36%;
+  --border: 214 32% 86%;
+  --primary: 173 80% 28%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 221 83% 53%;
+  --accent-foreground: 0 0% 100%;
+  --surface: 0 0% 100%;
+}
+
+.theme-high-contrast-light {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 0%;
+  --muted: 0 0% 91%;
+  --muted-foreground: 0 0% 20%;
+  --border: 0 0% 35%;
+  --primary: 0 0% 0%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 32 95% 38%;
+  --accent-foreground: 0 0% 0%;
+  --surface: 0 0% 100%;
+}
+
+.theme-jobsite-dark {
+  --background: 222 47% 8%;
+  --foreground: 210 40% 98%;
+  --muted: 217 33% 16%;
+  --muted-foreground: 215 20% 78%;
+  --border: 217 33% 24%;
+  --primary: 24 95% 53%;
+  --primary-foreground: 0 0% 0%;
+  --accent: 48 96% 53%;
+  --accent-foreground: 0 0% 0%;
+  --surface: 222 47% 11%;
+}
+
+.theme-slate-office {
+  --background: 222 47% 7%;
+  --foreground: 214 32% 91%;
+  --muted: 215 28% 17%;
+  --muted-foreground: 213 20% 76%;
+  --border: 215 25% 27%;
+  --primary: 142 71% 45%;
+  --primary-foreground: 0 0% 0%;
+  --accent: 199 89% 48%;
+  --accent-foreground: 0 0% 0%;
+  --surface: 222 47% 10%;
+}
+
+.theme-high-contrast-dark {
+  --background: 0 0% 0%;
+  --foreground: 0 0% 100%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 86%;
+  --border: 0 0% 65%;
+  --primary: 0 0% 100%;
+  --primary-foreground: 0 0% 0%;
+  --accent: 48 96% 53%;
+  --accent-foreground: 0 0% 0%;
+  --surface: 0 0% 6%;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+}
+
+.bg-white {
+  background-color: hsl(var(--surface)) !important;
+}
+
+a {
+  text-decoration: none;
+}
+
+input,
+select,
+textarea {
+  font: inherit;
+  color: hsl(var(--foreground));
+}
+
+input,
+select,
+textarea {
+  background: hsl(var(--surface));
+}
+
+:focus-visible {
+  outline: 3px solid hsl(var(--accent));
+  outline-offset: 2px;
+}
+
+.status-dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: hsl(var(--accent));
+}
