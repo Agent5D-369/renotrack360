@@ -19,7 +19,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
       return NextResponse.json({ error: "This review link has expired. Contact your contractor for a new one." }, { status: 410 });
     }
 
-    const org = request.job?.organization ?? await prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { reviewLink: true, name: true } });
+    const org = request.job?.organization ?? await prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { reviewLink: true, name: true, logoUrl: true, brandColor: true, companyTagline: true } });
 
     return NextResponse.json({
       id: request.id,
@@ -27,6 +27,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
       jobName: request.job?.jobName,
       clientName: request.profile?.profileName ?? request.job?.clientProfile?.profileName,
       orgName: org?.name,
+      orgLogoUrl: org?.logoUrl ?? null,
+      orgBrandColor: org?.brandColor ?? null,
+      orgTagline: (org as { companyTagline?: string | null } | null)?.companyTagline ?? null,
       reviewLink: org?.reviewLink ?? null,
       alreadyReceived: ["RECEIVED", "PUBLISHED"].includes(request.status),
       rating: request.rating,

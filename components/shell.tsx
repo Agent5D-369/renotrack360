@@ -41,16 +41,18 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
         <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
           {org?.logoUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt="Logo" className="h-8 w-auto max-w-[36px] shrink-0 rounded object-contain" />
+            <img src={org.logoUrl} alt={org.name ?? "Logo"} className="h-8 max-w-[140px] shrink-0 object-contain" />
           ) : (
-            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/20 font-black text-sm text-white">
-              {(org?.name ?? "RT").slice(0, 2).toUpperCase()}
-            </div>
+            <>
+              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/20 font-black text-sm text-white">
+                {(org?.name ?? "RT").slice(0, 2).toUpperCase()}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold leading-tight">{org?.name ?? "RenoTrack360"}</p>
+                <p className="text-xs text-white/50">Command Center</p>
+              </div>
+            </>
           )}
-          <div className="min-w-0">
-            <p className="truncate text-sm font-bold leading-tight">{org?.name ?? "RenoTrack360"}</p>
-            <p className="text-xs text-white/50">Command Center</p>
-          </div>
         </div>
 
         {/* Navigation */}

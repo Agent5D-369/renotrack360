@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { dateShort, money } from "@/lib/format";
 import { ClientRequestForm } from "@/components/client-request-form";
+import { ClientBrandHeader } from "@/components/client-brand-header";
 
 export const metadata = { title: "Your Project Update - RenoTrack360" };
 
@@ -115,15 +116,14 @@ export default async function ClientPortalPage({
       className="min-h-screen bg-slate-50"
       style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
     >
-      {/* Header */}
-      <header className="border-b border-border bg-white px-4 py-4">
-        <div className="mx-auto flex max-w-2xl items-center justify-between">
-          <p className="text-sm font-black text-[#183d29]">
-            {org.name ?? "RenoTrack360"}
-          </p>
-          <p className="text-xs text-muted-foreground">Project update</p>
-        </div>
-      </header>
+      <ClientBrandHeader
+        orgName={org.name ?? "RenoTrack360"}
+        logoUrl={org.logoUrl}
+        brandColor={org.brandColor}
+        tagline={org.companyTagline}
+        docLabel="Client Portal"
+        docNumber={job.jobName}
+      />
 
       <main className="mx-auto max-w-2xl space-y-5 px-4 py-8">
         {/* Hero */}

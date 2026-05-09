@@ -8,6 +8,7 @@ import { COUNTRIES } from "@/lib/address";
 import { prisma } from "@/lib/prisma";
 import { BillingSection } from "@/components/billing-section";
 import { TeamSection } from "@/components/team-section";
+import { LogoUpload } from "@/components/logo-upload";
 
 const PROVIDERS = [
   { value: "ANTHROPIC", label: "Anthropic (Claude)", placeholder: "sk-ant-..." },
@@ -40,30 +41,87 @@ export default async function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" body="Company identity, brand kit, default quote assumptions, payment terms, and document templates." />
+      <PageHeader title="Settings" body="Company identity, brand kit, logo, and document templates." />
 
-      {/* Brand Kit Preview */}
-      <Panel className="mb-6 overflow-hidden p-0">
-        <div className="flex items-center gap-4 px-5 py-4" style={{ backgroundColor: brandColor }}>
-          {org.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt="Company logo" className="h-10 w-auto object-contain" />
-          )}
-          <div>
-            <p className="text-lg font-bold text-white">{org.name}</p>
-            {org.companyTagline && <p className="text-sm text-white/70">{org.companyTagline}</p>}
+      {/* ── Brand Kit ──────────────────────────────────────────────────────────── */}
+      <div className="mb-8">
+        <h2 className="mb-1 text-lg font-bold">Brand kit</h2>
+        <p className="mb-5 text-sm text-muted-foreground">
+          Your logo and brand colors appear in the sidebar, every PDF you generate (estimates, invoices, change orders, weekly reports, closeout packages), the client portal, approval links, and review requests.
+        </p>
+
+        {/* Logo upload */}
+        <Panel className="mb-5 p-6">
+          <h3 className="mb-1 text-base font-bold">Company logo</h3>
+          <p className="mb-5 text-sm text-muted-foreground">
+            Upload your logo once — it appears everywhere automatically.
+          </p>
+          <LogoUpload currentUrl={org.logoUrl} brandColor={brandColor} />
+          {/* Fallback URL input for when Cloudinary isn't set up */}
+          <div className="mt-5 border-t border-border pt-5">
+            <p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted-foreground">Or paste a public logo URL</p>
+            <form action={updateSettings} className="flex gap-3">
+              <input name="logoUrl" type="url" defaultValue={org.logoUrl ?? ""} placeholder="https://yoursite.com/logo.png"
+                className="flex-1 h-9 rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
+              {/* Hidden fields to preserve other settings */}
+              <input type="hidden" name="name" value={org.name} />
+              <input type="hidden" name="brandColor" value={brandColor} />
+              <input type="hidden" name="brandSecondaryColor" value={secondaryColor} />
+              <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">
+                Save URL
+              </button>
+            </form>
           </div>
-          <div className="ml-auto text-right">
-            <p className="text-xs font-bold uppercase tracking-wide text-white/60">Estimate · Invoice · Report</p>
-            <p className="text-sm text-white/80">Document header preview</p>
+        </Panel>
+
+        {/* Color pickers + live preview */}
+        <Panel className="overflow-hidden p-0">
+          <div className="flex items-center gap-4 px-5 py-4" style={{ backgroundColor: brandColor }}>
+            {org.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={org.logoUrl} alt="Company logo" className="h-10 max-w-[160px] object-contain" />
+            ) : (
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-md bg-white/20 text-sm font-black text-white">
+                {(org.name ?? "RT").slice(0, 2).toUpperCase()}
+              </div>
+            )}
+            <div className="flex-1">
+              <p className="text-lg font-bold text-white leading-tight">{org.name}</p>
+              {org.companyTagline && <p className="text-sm text-white/70">{org.companyTagline}</p>}
+            </div>
+            <div className="hidden text-right md:block">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-white/50">Estimate · Invoice · Report · Portal</p>
+              <p className="text-sm font-semibold text-white/80">Document header preview</p>
+            </div>
           </div>
-        </div>
-        <div className="flex gap-2 border-t border-border px-5 py-3">
-          <div className="h-4 w-4 rounded-full border border-border" style={{ backgroundColor: brandColor }} title="Primary brand color" />
-          <div className="h-4 w-4 rounded-full border border-border" style={{ backgroundColor: secondaryColor }} title="Secondary brand color" />
-          <span className="text-xs text-muted-foreground">Brand colors · Update below to see changes after saving</span>
-        </div>
-      </Panel>
+          <div className="grid gap-5 p-5 sm:grid-cols-2">
+            <div className="grid gap-1">
+              <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Primary brand color</label>
+              <p className="text-xs text-muted-foreground">Sidebar background, PDF headers, section headings, buttons</p>
+              <form action={updateSettings} className="mt-2 flex items-center gap-3">
+                <input type="color" name="brandColor" defaultValue={brandColor}
+                  className="h-10 w-16 cursor-pointer rounded-md border border-border p-1" />
+                <input type="hidden" name="name" value={org.name} />
+                <input type="hidden" name="logoUrl" value={org.logoUrl ?? ""} />
+                <input type="hidden" name="brandSecondaryColor" value={secondaryColor} />
+                <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">Save</button>
+              </form>
+            </div>
+            <div className="grid gap-1">
+              <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Accent / secondary color</label>
+              <p className="text-xs text-muted-foreground">Highlights, CTA buttons, badges, pricing callouts</p>
+              <form action={updateSettings} className="mt-2 flex items-center gap-3">
+                <input type="color" name="brandSecondaryColor" defaultValue={secondaryColor}
+                  className="h-10 w-16 cursor-pointer rounded-md border border-border p-1" />
+                <input type="hidden" name="name" value={org.name} />
+                <input type="hidden" name="logoUrl" value={org.logoUrl ?? ""} />
+                <input type="hidden" name="brandColor" value={brandColor} />
+                <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">Save</button>
+              </form>
+            </div>
+          </div>
+        </Panel>
+      </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
         {/* Company Identity */}
@@ -82,7 +140,6 @@ export default async function SettingsPage() {
               { name: "phone", label: "Phone", defaultValue: org.phone },
               { name: "email", label: "Email", defaultValue: org.email },
               { name: "website", label: "Website", defaultValue: org.website },
-              { name: "logoUrl", label: "Logo URL", defaultValue: org.logoUrl, placeholder: "https://yoursite.com/logo.png", helpText: "Paste a public image URL - shown in document headers and the nav bar" },
               { name: "brandColor", label: "Primary brand color", type: "color", defaultValue: brandColor, helpText: "Used in document headers, the sidebar, and primary buttons" },
               { name: "brandSecondaryColor", label: "Secondary / accent color", type: "color", defaultValue: secondaryColor, helpText: "Used for highlights and accents" },
               { name: "themePreference", label: "Interface theme", type: "select", defaultValue: org.themePreference, options: appThemes.map((theme) => ({ label: `${theme.name} (${theme.mode})`, value: theme.id })) },

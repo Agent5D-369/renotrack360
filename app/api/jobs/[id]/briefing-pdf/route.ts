@@ -32,6 +32,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       brand: {
         companyName: org.name,
         tagline: org.companyTagline,
+        logoUrl: org.logoUrl,
         color: org.brandColor,
         address: org.address,
         phone: org.phone,

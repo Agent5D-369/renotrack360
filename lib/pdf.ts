@@ -8,6 +8,7 @@ export type PdfBrand = {
   companyName: string;
   tagline?: string | null;
   color?: string | null;
+  logoUrl?: string | null;
   address?: string | null;
   phone?: string | null;
   email?: string | null;
@@ -65,10 +66,29 @@ export async function buildDocument(input: {
   const tagline = brand?.tagline ?? "Renovation operations from lead to closeout";
 
   // Header band
-  doc.rect(48, 48, doc.page.width - 96, 64).fill(brandColor);
-  doc.fontSize(14).fillColor("#ffffff").text(companyName, 60, 60, { continued: false });
-  doc.fontSize(8).fillColor("rgba(255,255,255,0.7)").text(tagline, 60, 78);
-  doc.moveDown(3.5);
+  const HEADER_H = 68;
+  doc.rect(48, 48, doc.page.width - 96, HEADER_H).fill(brandColor);
+
+  // Try to render the logo; fall back to text-only header
+  const logoBuffer = brand?.logoUrl ? await fetchImageBuffer(brand.logoUrl) : null;
+  if (logoBuffer) {
+    // Logo on left, company info on right
+    const logoMaxW = 180;
+    const logoMaxH = 44;
+    try {
+      doc.image(logoBuffer, 60, 50, { fit: [logoMaxW, logoMaxH] });
+    } catch {
+      // If logo renders error, fall through to text
+    }
+    const textX = 60 + logoMaxW + 12;
+    doc.fontSize(11).fillColor("#ffffff").text(companyName, textX, 57, { continued: false, width: doc.page.width - 96 - textX });
+    doc.fontSize(7.5).fillColor("rgba(255,255,255,0.65)").text(tagline, textX, 72, { width: doc.page.width - 96 - textX });
+  } else {
+    // Text-only header
+    doc.fontSize(14).fillColor("#ffffff").text(companyName, 60, 60, { continued: false });
+    doc.fontSize(8).fillColor("rgba(255,255,255,0.7)").text(tagline, 60, 79);
+  }
+  doc.moveDown(3.8);
 
   // Document title block
   doc.fontSize(22).fillColor(brandColor).text(cleanText(input.title));

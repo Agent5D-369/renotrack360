@@ -45,6 +45,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
 
     const alreadyActed = ["APPROVED", "DECLINED"].includes(approval.status);
 
+    // Fetch org branding for header
+    const orgForBrand = changeOrderData
+      ? await prisma.changeOrder.findUnique({ where: { id: approval.changeOrderId! }, include: { job: { include: { organization: { select: { name: true, logoUrl: true, brandColor: true, companyTagline: true } } } } } }).then(co => co?.job.organization)
+      : await prisma.organization.findFirst({ select: { name: true, logoUrl: true, brandColor: true, companyTagline: true } });
+
     return NextResponse.json({
       id: approval.id,
       approvalType: approval.approvalType,
@@ -57,6 +62,10 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
       jobName: changeOrderData?.jobName,
       estimateNumber: approval.estimate?.estimateNumber,
       total: approval.estimate?.total ? Number(approval.estimate.total) : undefined,
+      orgName: orgForBrand?.name,
+      orgLogoUrl: orgForBrand?.logoUrl ?? null,
+      orgBrandColor: orgForBrand?.brandColor ?? null,
+      orgTagline: orgForBrand?.companyTagline ?? null,
     });
   } catch (err) {
     console.error("Approval GET error", err);

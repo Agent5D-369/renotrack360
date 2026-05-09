@@ -3,12 +3,45 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 
+function BrandBar({ data, docLabel }: { data: { orgName?: string; orgLogoUrl?: string | null; orgBrandColor?: string | null; orgTagline?: string | null }; docLabel: string }) {
+  const bg = data.orgBrandColor ?? "#183d29";
+  return (
+    <header style={{ backgroundColor: bg }} className="w-full">
+      <div className="mx-auto flex max-w-2xl items-center gap-4 px-6 py-4">
+        {data.orgLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={data.orgLogoUrl} alt={data.orgName ?? "Logo"} className="h-9 max-w-[160px] object-contain" />
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/20 text-sm font-black text-white">
+              {(data.orgName ?? "RT").slice(0, 2).toUpperCase()}
+            </div>
+            <p className="text-sm font-bold text-white">{data.orgName}</p>
+          </div>
+        )}
+        {data.orgLogoUrl && data.orgName && (
+          <div className="border-l border-white/20 pl-4">
+            <p className="text-sm font-bold text-white">{data.orgName}</p>
+            {data.orgTagline && <p className="text-xs text-white/60">{data.orgTagline}</p>}
+          </div>
+        )}
+        <div className="ml-auto">
+          <p className="text-xs font-black uppercase tracking-wider text-white/60">{docLabel}</p>
+        </div>
+      </div>
+    </header>
+  );
+}
+
 interface ReviewData {
   id: string;
   requestType: string;
   jobName?: string;
   clientName?: string;
   orgName?: string;
+  orgLogoUrl?: string | null;
+  orgBrandColor?: string | null;
+  orgTagline?: string | null;
   reviewLink?: string;
   alreadyReceived: boolean;
   rating?: number;
@@ -76,9 +109,9 @@ export default function ReviewPage() {
 
   if (done || data.alreadyReceived) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-16" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-        <div className="mx-auto max-w-md space-y-5 text-center">
-          {data.orgName && <p className="text-xs font-bold text-[#183d29]">{data.orgName}</p>}
+      <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+        <BrandBar data={data} docLabel="Review Request" />
+        <div className="mx-auto max-w-md space-y-5 px-4 py-12 text-center">
           <div className="rounded-2xl border border-green-200 bg-green-50 p-8">
             <p className="text-4xl">⭐</p>
             <p className="mt-3 text-xl font-black">Thank you!</p>
@@ -110,9 +143,9 @@ export default function ReviewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-12" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <div className="mx-auto max-w-lg space-y-5">
-        {data.orgName && <p className="text-xs font-bold text-[#183d29]">{data.orgName}</p>}
+    <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <BrandBar data={data} docLabel="Review Request" />
+      <div className="mx-auto max-w-lg space-y-5 px-4 py-12">
 
         <div>
           <h1 className="text-2xl font-black text-[#0f172a]">How did we do?</h1>

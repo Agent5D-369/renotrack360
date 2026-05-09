@@ -36,6 +36,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     brand: {
       companyName: org.name,
       tagline: org.companyTagline,
+      logoUrl: org.logoUrl,
       color: org.brandColor,
       address: org.address,
       phone: org.phone,

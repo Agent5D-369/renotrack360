@@ -3,9 +3,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 
-// This is a client component because the form needs state for the submit/confirm flow.
-// Data fetching for the approval is done via a fetch on mount.
-
 interface ApprovalData {
   id: string;
   approvalType: string;
@@ -17,8 +14,41 @@ interface ApprovalData {
   estimateNumber?: string;
   total?: number;
   orgName?: string;
+  orgLogoUrl?: string | null;
+  orgBrandColor?: string | null;
+  orgTagline?: string | null;
   jobName?: string;
   alreadyActed: boolean;
+}
+
+function BrandBar({ data, docLabel }: { data: { orgName?: string; orgLogoUrl?: string | null; orgBrandColor?: string | null; orgTagline?: string | null }; docLabel: string }) {
+  const bg = data.orgBrandColor ?? "#183d29";
+  return (
+    <header style={{ backgroundColor: bg }} className="w-full">
+      <div className="mx-auto flex max-w-2xl items-center gap-4 px-6 py-4">
+        {data.orgLogoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={data.orgLogoUrl} alt={data.orgName ?? "Logo"} className="h-9 max-w-[160px] object-contain" />
+        ) : (
+          <div className="flex items-center gap-3">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/20 text-sm font-black text-white">
+              {(data.orgName ?? "RT").slice(0, 2).toUpperCase()}
+            </div>
+            <p className="text-sm font-bold text-white">{data.orgName}</p>
+          </div>
+        )}
+        {data.orgLogoUrl && data.orgName && (
+          <div className="border-l border-white/20 pl-4">
+            <p className="text-sm font-bold text-white">{data.orgName}</p>
+            {data.orgTagline && <p className="text-xs text-white/60">{data.orgTagline}</p>}
+          </div>
+        )}
+        <div className="ml-auto">
+          <p className="text-xs font-black uppercase tracking-wider text-white/60">{docLabel}</p>
+        </div>
+      </div>
+    </header>
+  );
 }
 
 export default function ApprovePage() {
@@ -101,12 +131,11 @@ export default function ApprovePage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 px-4 py-10" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <div className="mx-auto max-w-lg space-y-5">
-        {/* Header */}
+    <div className="min-h-screen bg-slate-50" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <BrandBar data={data} docLabel="Approval Request" />
+      <div className="mx-auto max-w-lg space-y-5 px-4 py-10">
         <div>
-          {data.orgName && <p className="text-xs font-bold text-[#183d29]">{data.orgName}</p>}
-          <h1 className="mt-1 text-2xl font-black text-[#0f172a]">Approval Request</h1>
+          <h1 className="text-2xl font-black text-[#0f172a]">Approval Request</h1>
           {data.jobName && <p className="mt-1 text-sm text-muted-foreground">{data.jobName}</p>}
         </div>
 
