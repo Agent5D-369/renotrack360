@@ -15,7 +15,7 @@ Disallow: /profiles
 Disallow: /properties
 Disallow: /settings
 
-Sitemap: https://renotrack360.com/sitemap.xml
+Sitemap: https://www.renotrack360.com/sitemap.xml
 `,
     { headers: { "Content-Type": "text/plain" } }
   );

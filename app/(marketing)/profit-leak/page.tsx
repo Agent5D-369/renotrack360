@@ -8,7 +8,7 @@ export const metadata = {
   openGraph: {
     title: "How Much Is Your Renovation Business Leaking This Year?",
     description: "8 questions. See your exact dollar leak from scope creep, unbilled extras, missed referrals, and invoice drag. Free tool for renovation contractors.",
-    url: "https://renotrack360.com/profit-leak",
+    url: "https://www.renotrack360.com/profit-leak",
     siteName: "RenoTrack360",
   },
 };

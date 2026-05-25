@@ -3,7 +3,7 @@ export const metadata = { title: "Privacy Policy — RenoTrack360" };
 const LAST_UPDATED = "May 10, 2026";
 const COMPANY = "RenoTrack360";
 const CONTACT_EMAIL = "privacy@renotrack360.com";
-const APP_URL = "https://renotrack360.com";
+const APP_URL = "https://www.renotrack360.com";
 
 export default function PrivacyPage() {
   return (

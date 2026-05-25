@@ -8,23 +8,23 @@ const schemaOrg = {
   "@graph": [
     {
       "@type": "Organization",
-      "@id": "https://renotrack360.com/#org",
+      "@id": "https://www.renotrack360.com/#org",
       name: "RenoTrack360",
-      url: "https://renotrack360.com",
-      logo: "https://renotrack360.com/logo.png",
+      url: "https://www.renotrack360.com",
+      logo: "https://www.renotrack360.com/logo.png",
       contactPoint: { "@type": "ContactPoint", email: "hello@renotrack360.com" },
       sameAs: [],
     },
     {
       "@type": "SoftwareApplication",
-      "@id": "https://renotrack360.com/#app",
+      "@id": "https://www.renotrack360.com/#app",
       name: "RenoTrack360",
       applicationCategory: "BusinessApplication",
       operatingSystem: "Web, iOS, Android",
       description:
         "RenoTrack360 is a renovation contractor management platform covering the full lead-to-closeout lifecycle. Features include scope creep protection, change order management, profit leak dashboard, weekly client report generator, client decision portal, before and after photo engine, estimating, invoicing, job phases, and field mode for crews.",
-      url: "https://renotrack360.com",
-      publisher: { "@id": "https://renotrack360.com/#org" },
+      url: "https://www.renotrack360.com",
+      publisher: { "@id": "https://www.renotrack360.com/#org" },
       offers: [
         { "@type": "Offer", name: "Starter", price: "149", priceCurrency: "USD", billingIncrement: "P1M" },
         { "@type": "Offer", name: "Pro", price: "349", priceCurrency: "USD", billingIncrement: "P1M" },
@@ -291,7 +291,7 @@ export const metadata = {
     title: "RenoTrack360 - Contractor Management Software Built for Renovation",
     description:
       "Scope creep protection. Profit leak dashboard. Weekly client reports in 2 minutes. Full lead-to-closeout lifecycle. Built for renovation contractors who are done losing money in the cracks.",
-    url: "https://renotrack360.com",
+    url: "https://www.renotrack360.com",
     siteName: "RenoTrack360",
     type: "website",
   },
@@ -300,7 +300,7 @@ export const metadata = {
     title: "RenoTrack360 - Stop Losing Money in the Cracks",
     description: "Renovation contractor management software. Lead to closeout. Scope creep protection. Profit leak dashboard.",
   },
-  alternates: { canonical: "https://renotrack360.com" },
+  alternates: { canonical: "https://www.renotrack360.com" },
 };
 
 export default function HomePage() {

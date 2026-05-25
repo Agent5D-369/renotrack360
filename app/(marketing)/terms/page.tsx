@@ -3,7 +3,7 @@ export const metadata = { title: "Terms of Service — RenoTrack360" };
 const LAST_UPDATED = "May 10, 2026";
 const COMPANY = "RenoTrack360";
 const CONTACT_EMAIL = "legal@renotrack360.com";
-const APP_URL = "https://renotrack360.com";
+const APP_URL = "https://www.renotrack360.com";
 
 export default function TermsPage() {
   return (

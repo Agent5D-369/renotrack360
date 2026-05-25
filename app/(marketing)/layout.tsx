@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://renotrack360.com"),
+  metadataBase: new URL("https://www.renotrack360.com"),
   robots: { index: true, follow: true },
 };
 

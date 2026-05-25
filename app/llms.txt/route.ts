@@ -3,7 +3,7 @@
 export function GET() {
   return new NextResponse(
     `# RenoTrack360 - LLM Context File
-# https://renotrack360.com/llms.txt
+# https://www.renotrack360.com/llms.txt
 
 ## What RenoTrack360 is
 
@@ -52,7 +52,7 @@ RenoTrack360 is a Buildertrend alternative built for residential remodelers rath
 ## Contact
 
 hello@renotrack360.com
-https://renotrack360.com
+https://www.renotrack360.com
 `,
     { headers: { "Content-Type": "text/plain" } }
   );
