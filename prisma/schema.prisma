@@ -508,6 +508,7 @@ model Organization {
   leads              Lead[]
   quotes             Quote[]
   costCatalogItems   CostCatalogItem[]
+  priceSnapshots     PriceSnapshot[]
   costAssemblies     CostAssembly[]
   marketCostFactors  MarketCostFactor[]
   laborRates         LaborRate[]
@@ -1611,6 +1612,31 @@ model WeeklyReportPublication {
   report          WeeklyReport @relation(fields: [reportId], references: [id], onDelete: Restrict)
 
   @@unique([reportId, revision])
+}
+
+model PriceSnapshot {
+  id                    String   @id @default(cuid())
+  organizationId        String
+  requestId             String
+  inputDigest           String
+  createdById           String
+  name                  String
+  basis                 String   @db.Text
+  policyVersion         String
+  inputs                Json
+  directCost            Decimal  @db.Decimal(14, 2)
+  riskAmount            Decimal  @db.Decimal(14, 2)
+  riskAdjustedDirectCost Decimal  @db.Decimal(14, 2)
+  targetMarginPercent   Decimal  @db.Decimal(6, 2)
+  sellingPrice          Decimal  @db.Decimal(14, 2)
+  grossProfit           Decimal  @db.Decimal(14, 2)
+  ownerExceptionReason  String?  @db.Text
+  ownerApprovedById     String?
+  createdAt             DateTime @default(now())
+  organization          Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, requestId])
+  @@index([organizationId, createdAt])
 }
 
 model ChangeOrder {

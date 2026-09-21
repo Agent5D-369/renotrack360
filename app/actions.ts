@@ -886,6 +886,24 @@ export async function publishWeeklyReport(reportId: string, reviewedDigest: stri
   redirect(`/weekly-reports/${reportId}?flash=Reviewed+report+published`);
 }
 
+export async function createPriceScenario(formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { savePriceSnapshot, PricingError } = await import("@/lib/price-snapshot");
+  let id: string;
+  try {
+    const snapshot = await savePriceSnapshot(prisma, actor.id, String(formData.get("requestId") ?? ""), {
+      ...Object.fromEntries(formData), ownerApproval: formData.get("ownerApproval") === "on",
+    });
+    id = snapshot.id;
+  } catch (error) {
+    if (error instanceof PricingError) redirect(`/cost-intelligence?error=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
+  revalidatePath("/cost-intelligence");
+  redirect(`/cost-intelligence/${id}`);
+}
+
 export async function createChangeOrder(formData: FormData) {
   await requireStaff();
   let parsed: ReturnType<typeof changeOrderSchema.parse>;

@@ -19,6 +19,7 @@
     "test:media-http": "node scripts/media-http-smoke.mjs",
     "test:reports": "node scripts/test-access.mjs reports",
     "test:reports-http": "tsx scripts/reports-http-smoke.ts",
+    "test:pricing": "node scripts/test-access.mjs pricing",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

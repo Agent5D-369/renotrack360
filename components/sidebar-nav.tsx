@@ -50,6 +50,7 @@ const navGroups: Array<{ title: string; defaultOpen: boolean; items: NavItem[] }
     items: [
       ["New Estimate", "/quotes/field-wizard", Zap],
       ["Estimates", "/estimates", FileCheck],
+      ["Cost Intelligence", "/cost-intelligence", TrendingUp],
       ["Cost Catalog", "/cost-catalog", BookOpen]
     ]
   },
