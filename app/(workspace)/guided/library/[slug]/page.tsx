@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, ShieldCheck, Star, Users } from "lucide-react";
@@ -18,6 +19,7 @@ const phaseColors: Record<LibraryPhase, { badge: string; bg: string; border: str
 };
 
 export default async function LibraryStepPage({ params }: { params: Promise<{ slug: string }> }) {
+  await requireStaffPage();
   const { slug } = await params;
   const step = getLibraryStep(slug);
   if (!step) notFound();

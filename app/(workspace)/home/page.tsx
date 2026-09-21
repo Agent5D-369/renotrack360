@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { AlertCircle, ArrowRight, Zap } from "lucide-react";
 import { getServerSession } from "next-auth";
@@ -16,6 +17,7 @@ const FOLLOW_UP_LABELS: Record<string, string> = {
 };
 
 export default async function TodayPage() {
+  await requireStaffPage();
   const session = await getServerSession(authOptions);
   const uiMode = (session?.user as { uiMode?: string } | undefined)?.uiMode ?? "POWER";
   const now = new Date();

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { addJobPhoto, deleteJobPhoto, importPhotosFromLogs, tagJobPhoto } from "@/app/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
@@ -13,6 +14,7 @@ const LABEL_COLORS = {
 };
 
 export default async function GalleryPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },

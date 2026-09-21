@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function CompliancePage() {
+  await requireStaffPage();
   const [permits, incidents, audits, templates] = await Promise.all([
     prisma.permitRecord.findMany({ include: { job: true }, orderBy: { updatedAt: "desc" } }),
     prisma.incidentReport.findMany({ include: { job: true }, orderBy: { incidentDate: "desc" } }),

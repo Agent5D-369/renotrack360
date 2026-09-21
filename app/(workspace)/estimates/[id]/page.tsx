@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
@@ -7,6 +8,7 @@ import { dateShort, money, titleFromEnum } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function EstimateDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const estimate = await prisma.estimate.findUniqueOrThrow({
     where: { id },

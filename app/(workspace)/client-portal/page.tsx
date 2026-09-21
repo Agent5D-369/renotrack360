@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { generateJobPortalToken } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
@@ -9,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://renotrack360.com";
 
 export default async function ClientPortalPage() {
+  await requireStaffPage();
   const now = new Date();
 
   const [activeJobs, approvals, overdueSelections] = await Promise.all([

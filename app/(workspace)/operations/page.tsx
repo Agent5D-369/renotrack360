@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
@@ -5,6 +6,7 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function OperationsPage() {
+  await requireStaffPage();
   const [tasks, reports, meetings, timeEntries, jobs] = await Promise.all([
     prisma.task.findMany({ include: { job: true, phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" }, take: 8 }),
     prisma.fieldReport.findMany({ include: { job: true }, orderBy: { reportDate: "desc" }, take: 6 }),

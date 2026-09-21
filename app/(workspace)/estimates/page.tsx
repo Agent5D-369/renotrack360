@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
@@ -5,6 +6,7 @@ import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function EstimatesPage() {
+  await requireStaffPage();
   const estimates = await prisma.estimate.findMany({
     include: { clientProfile: true, property: true, followUps: { orderBy: { dueDate: "asc" } } },
     orderBy: { updatedAt: "desc" }

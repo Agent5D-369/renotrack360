@@ -1,4 +1,7 @@
-﻿"use server";
+"use server";
+
+import { requireStaff } from "@/lib/staff-access";
+
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -52,6 +55,7 @@ function nullable<T extends Record<string, unknown>>(value: T) {
 }
 
 export async function createProfile(formData: FormData) {
+  await requireStaff();
   let parsed: ReturnType<typeof profileSchema.parse>;
   try { parsed = profileSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/profiles/new"); }
   const serviceTagIds = formArray(formData, "serviceTagIds");
@@ -90,6 +94,7 @@ export async function createProfile(formData: FormData) {
 }
 
 export async function updateProfile(profileId: string, formData: FormData) {
+  await requireStaff();
   const parsed = profileSchema.parse(nullable(data(formData)));
   const serviceTagIds = formArray(formData, "serviceTagIds");
   await prisma.profile.update({
@@ -114,6 +119,7 @@ export async function updateProfile(profileId: string, formData: FormData) {
 }
 
 export async function createLead(formData: FormData) {
+  await requireStaff();
   const returnTo = String(formData.get("returnTo") || "");
   let parsed: ReturnType<typeof leadSchema.parse>;
   try { parsed = leadSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/leads/new"); }
@@ -130,6 +136,7 @@ export async function createLead(formData: FormData) {
 }
 
 export async function updateLead(leadId: string, formData: FormData) {
+  await requireStaff();
   const parsed = leadSchema.parse(nullable(data(formData)));
   await prisma.lead.update({
     where: { id: leadId },
@@ -144,6 +151,7 @@ export async function updateLead(leadId: string, formData: FormData) {
 }
 
 export async function createProperty(formData: FormData) {
+  await requireStaff();
   const returnTo = String(formData.get("returnTo") || "");
   const parsed = propertySchema.parse(nullable(data(formData)));
   await prisma.property.create({
@@ -160,6 +168,7 @@ export async function createProperty(formData: FormData) {
 }
 
 export async function createQuote(formData: FormData) {
+  await requireStaff();
   const parsed = quoteSchema.parse(nullable(data(formData)));
   await prisma.quote.create({
     data: {
@@ -184,6 +193,7 @@ function numberField(formData: FormData, name: string, fallback = 0) {
 }
 
 export async function createQuoteFromFieldWizard(formData: FormData) {
+  await requireStaff();
   const clientProfileId = String(formData.get("clientProfileId") || "") || null;
   const propertyId = String(formData.get("propertyId") || "") || null;
   const leadId = String(formData.get("leadId") || "") || null;
@@ -363,6 +373,7 @@ export async function createQuoteFromFieldWizard(formData: FormData) {
 }
 
 export async function createQuoteLineItem(formData: FormData) {
+  await requireStaff();
   const parsed = quoteLineItemSchema.parse(nullable(data(formData)));
   const totals = calculateLineItem({
     ...parsed,
@@ -381,6 +392,7 @@ export async function createQuoteLineItem(formData: FormData) {
 }
 
 export async function addCatalogItemToQuote(formData: FormData) {
+  await requireStaff();
   const quoteId = String(formData.get("quoteId"));
   const catalogItemId = String(formData.get("catalogItemId"));
   const quantity = Number(formData.get("quantity") ?? 1);
@@ -432,6 +444,7 @@ export async function addCatalogItemToQuote(formData: FormData) {
 }
 
 export async function createCatalogItem(formData: FormData) {
+  await requireStaff();
   const parsed = catalogSchema.parse(nullable(data(formData)));
   await prisma.costCatalogItem.create({
     data: {
@@ -445,6 +458,7 @@ export async function createCatalogItem(formData: FormData) {
 }
 
 export async function updateCatalog(itemId: string, formData: FormData) {
+  await requireStaff();
   const parsed = catalogSchema.parse(nullable(data(formData)));
   await prisma.costCatalogItem.update({
     where: { id: itemId },
@@ -459,6 +473,7 @@ export async function updateCatalog(itemId: string, formData: FormData) {
 }
 
 export async function createActivity(formData: FormData) {
+  await requireStaff();
   const subject = String(formData.get("subject") ?? "");
   const activityType = String(formData.get("activityType") ?? "NOTE");
   const body = String(formData.get("body") ?? "") || null;
@@ -483,36 +498,42 @@ export async function createActivity(formData: FormData) {
 }
 
 export async function deleteLead(leadId: string) {
+  await requireStaff();
   await prisma.lead.update({ where: { id: leadId }, data: { deletedAt: new Date() } });
   revalidatePath("/leads");
   redirect("/leads?flash=Lead+deleted");
 }
 
 export async function deleteProfile(profileId: string) {
+  await requireStaff();
   await prisma.profile.delete({ where: { id: profileId } });
   revalidatePath("/profiles");
   redirect("/profiles?flash=Contact+deleted");
 }
 
 export async function deleteProperty(propertyId: string) {
+  await requireStaff();
   await prisma.property.delete({ where: { id: propertyId } });
   revalidatePath("/properties");
   redirect("/properties?flash=Property+deleted");
 }
 
 export async function deleteInvoice(invoiceId: string) {
+  await requireStaff();
   await prisma.invoice.delete({ where: { id: invoiceId } });
   revalidatePath("/invoices");
   redirect("/invoices?flash=Invoice+deleted");
 }
 
 export async function deleteChangeOrder(changeOrderId: string) {
+  await requireStaff();
   await prisma.changeOrder.delete({ where: { id: changeOrderId } });
   revalidatePath("/change-orders");
   redirect("/change-orders?flash=Change+order+deleted");
 }
 
 export async function createJob(formData: FormData) {
+  await requireStaff();
   const returnTo = String(formData.get("returnTo") || "");
   let parsed: ReturnType<typeof jobSchema.parse>;
   try { parsed = jobSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/jobs/new"); }
@@ -540,6 +561,7 @@ export async function createJob(formData: FormData) {
 }
 
 export async function updateJob(jobId: string, formData: FormData) {
+  await requireStaff();
   const parsed = jobSchema.parse(nullable(data(formData)));
   const balanceDue = Number(parsed.contractAmount) - Number(parsed.amountPaid);
   await prisma.job.update({
@@ -557,6 +579,7 @@ export async function updateJob(jobId: string, formData: FormData) {
 }
 
 export async function updateProperty(propertyId: string, formData: FormData) {
+  await requireStaff();
   const parsed = propertySchema.parse(nullable(data(formData)));
   await prisma.property.update({
     where: { id: propertyId },
@@ -572,6 +595,7 @@ export async function updateProperty(propertyId: string, formData: FormData) {
 }
 
 export async function updateQuote(quoteId: string, formData: FormData) {
+  await requireStaff();
   const parsed = quoteSchema.parse(nullable(data(formData)));
   await prisma.quote.update({
     where: { id: quoteId },
@@ -587,6 +611,7 @@ export async function updateQuote(quoteId: string, formData: FormData) {
 }
 
 export async function updateEstimateFollowUp(followUpId: string, estimateId: string, formData: FormData) {
+  await requireStaff();
   const status = String(formData.get("status") || "SCHEDULED");
   const outcomeNotes = String(formData.get("outcomeNotes") || "") || null;
   const dueDateRaw = formData.get("dueDate");
@@ -605,6 +630,7 @@ export async function updateEstimateFollowUp(followUpId: string, estimateId: str
 }
 
 export async function updateEstimate(estimateId: string, formData: FormData) {
+  await requireStaff();
   const parsed = estimateSchema.parse(nullable(data(formData)));
   await prisma.estimate.update({
     where: { id: estimateId },
@@ -620,6 +646,7 @@ export async function updateEstimate(estimateId: string, formData: FormData) {
 }
 
 export async function createTask(formData: FormData) {
+  await requireStaff();
   const parsed = taskSchema.parse(nullable(data(formData)));
   await prisma.task.create({
     data: {
@@ -635,6 +662,7 @@ export async function createTask(formData: FormData) {
 }
 
 export async function completeTask(formData: FormData) {
+  await requireStaff();
   const taskId = String(formData.get("taskId") ?? "");
   const returnTo = String(formData.get("returnTo") ?? "/field");
   await prisma.task.update({ where: { id: taskId }, data: { status: "COMPLETE" } });
@@ -684,6 +712,7 @@ const projectTaskTemplates = {
 } as const;
 
 export async function deployProjectTaskTemplate(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const templateKey = String(formData.get("templateKey") || "FULL_INTERIOR_RENOVATION") as keyof typeof projectTaskTemplates;
   const template = projectTaskTemplates[templateKey] ?? projectTaskTemplates.FULL_INTERIOR_RENOVATION;
@@ -711,6 +740,7 @@ export async function deployProjectTaskTemplate(formData: FormData) {
 }
 
 export async function convertQuoteToJob(quoteId: string) {
+  await requireStaff();
   const quote = await prisma.quote.findUniqueOrThrow({
     where: { id: quoteId },
     include: { property: true, clientProfile: true }
@@ -738,6 +768,7 @@ export async function convertQuoteToJob(quoteId: string) {
 }
 
 export async function createEstimateFromQuote(quoteId: string) {
+  await requireStaff();
   const quote = await prisma.quote.findUniqueOrThrow({
     where: { id: quoteId },
     include: { lead: true, clientProfile: true, property: true, lineItems: true }
@@ -815,6 +846,7 @@ export async function createEstimateFromQuote(quoteId: string) {
 }
 
 export async function createWeeklyReport(formData: FormData) {
+  await requireStaff();
   let parsed: ReturnType<typeof weeklyReportSchema.parse>;
   try { parsed = weeklyReportSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/weekly-reports/new"); }
   await prisma.weeklyReport.create({ data: parsed });
@@ -823,6 +855,7 @@ export async function createWeeklyReport(formData: FormData) {
 }
 
 export async function updateWeeklyReport(reportId: string, formData: FormData) {
+  await requireStaff();
   const parsed = weeklyReportSchema.parse(nullable(data(formData)));
   await prisma.weeklyReport.update({
     where: { id: reportId },
@@ -834,6 +867,7 @@ export async function updateWeeklyReport(reportId: string, formData: FormData) {
 }
 
 export async function createChangeOrder(formData: FormData) {
+  await requireStaff();
   let parsed: ReturnType<typeof changeOrderSchema.parse>;
   try { parsed = changeOrderSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/change-orders/new"); }
   await prisma.changeOrder.create({
@@ -850,6 +884,7 @@ export async function createChangeOrder(formData: FormData) {
 }
 
 export async function updateChangeOrder(changeOrderId: string, formData: FormData) {
+  await requireStaff();
   const parsed = changeOrderSchema.parse(nullable(data(formData)));
   await prisma.changeOrder.update({
     where: { id: changeOrderId },
@@ -861,6 +896,7 @@ export async function updateChangeOrder(changeOrderId: string, formData: FormDat
 }
 
 export async function createInvoice(formData: FormData) {
+  await requireStaff();
   let parsed: ReturnType<typeof invoiceSchema.parse>;
   try { parsed = invoiceSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/invoices/new"); }
   await prisma.invoice.create({
@@ -875,6 +911,7 @@ export async function createInvoice(formData: FormData) {
 }
 
 export async function updateInvoice(invoiceId: string, formData: FormData) {
+  await requireStaff();
   const parsed = invoiceSchema.parse(nullable(data(formData)));
   await prisma.invoice.update({
     where: { id: invoiceId },
@@ -890,6 +927,7 @@ export async function updateInvoice(invoiceId: string, formData: FormData) {
 }
 
 export async function createPayment(formData: FormData) {
+  await requireStaff();
   const parsed = paymentSchema.parse(nullable(data(formData)));
   await prisma.payment.create({
     data: {
@@ -911,6 +949,7 @@ export async function createPayment(formData: FormData) {
 }
 
 export async function updatePayment(paymentId: string, formData: FormData) {
+  await requireStaff();
   const parsed = paymentSchema.parse(nullable(data(formData)));
   await prisma.payment.update({
     where: { id: paymentId },
@@ -927,6 +966,7 @@ export async function updatePayment(paymentId: string, formData: FormData) {
 }
 
 export async function createFinancing(formData: FormData) {
+  await requireStaff();
   const parsed = financingSchema.parse(nullable(data(formData)));
   await prisma.financing.create({
     data: { ...parsed, status: parsed.status as Prisma.FinancingCreateInput["status"] }
@@ -936,6 +976,7 @@ export async function createFinancing(formData: FormData) {
 }
 
 export async function updateFinancing(financingId: string, formData: FormData) {
+  await requireStaff();
   const parsed = financingSchema.parse(nullable(data(formData)));
   await prisma.financing.update({
     where: { id: financingId },
@@ -947,6 +988,7 @@ export async function updateFinancing(financingId: string, formData: FormData) {
 }
 
 export async function updateSettings(formData: FormData) {
+  await requireStaff();
   let parsed: ReturnType<typeof settingsSchema.parse>;
   try { parsed = settingsSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/settings"); }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -956,6 +998,7 @@ export async function updateSettings(formData: FormData) {
 }
 
 export async function updateSettingsTerms(formData: FormData) {
+  await requireStaff();
   let parsed: ReturnType<typeof settingsTermsSchema.parse>;
   try { parsed = settingsTermsSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/settings"); }
   await prisma.organization.update({ where: { id: DEFAULT_ORG_ID }, data: parsed });
@@ -964,6 +1007,7 @@ export async function updateSettingsTerms(formData: FormData) {
 }
 
 export async function createPaymentLink(invoiceId: string) {
+  await requireStaff();
   const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: { clientProfile: true } });
   const link = await createStripePaymentLink({
     amount: Number(invoice.balanceDue || invoice.total),
@@ -976,6 +1020,7 @@ export async function createPaymentLink(invoiceId: string) {
 }
 
 export async function saveEstimateOption(formData: FormData) {
+  await requireStaff();
   const estimateId = String(formData.get("estimateId") || "");
   const optionId = String(formData.get("optionId") || "") || null;
   const optionTier = String(formData.get("optionTier") || "BETTER");
@@ -1001,6 +1046,7 @@ export async function saveEstimateOption(formData: FormData) {
 }
 
 export async function deleteEstimateOption(formData: FormData) {
+  await requireStaff();
   const optionId = String(formData.get("optionId") || "");
   const estimateId = String(formData.get("estimateId") || "");
   await prisma.estimateOption.delete({ where: { id: optionId } });
@@ -1033,6 +1079,7 @@ async function recalculateQuote(quoteId: string) {
 }
 
 export async function createBudgetLine(formData: FormData) {
+  await requireStaff();
   const parsed = budgetLineSchema.parse(nullable(data(formData)));
   await prisma.budgetLine.create({
     data: {
@@ -1053,6 +1100,7 @@ export async function createBudgetLine(formData: FormData) {
 }
 
 export async function logActualCost(formData: FormData) {
+  await requireStaff();
   const parsed = actualCostSchema.parse(nullable(data(formData)));
   const cost = await prisma.actualCost.create({
     data: {
@@ -1071,6 +1119,7 @@ export async function logActualCost(formData: FormData) {
 }
 
 export async function createFieldReport(formData: FormData) {
+  await requireStaff();
   const { writeFile, mkdir } = await import("node:fs/promises");
   const nodePath = await import("node:path");
 
@@ -1108,6 +1157,7 @@ export async function createFieldReport(formData: FormData) {
 }
 
 export async function deleteFieldReport(formData: FormData) {
+  await requireStaff();
   const reportId = String(formData.get("reportId") || "");
   const report = await prisma.fieldReport.findUniqueOrThrow({ where: { id: reportId }, select: { jobId: true } });
   await prisma.fieldReport.delete({ where: { id: reportId } });
@@ -1117,6 +1167,7 @@ export async function deleteFieldReport(formData: FormData) {
 }
 
 export async function createProfileRelationship(formData: FormData) {
+  await requireStaff();
   const fromProfileId = String(formData.get("fromProfileId") || "");
   const toProfileId = String(formData.get("toProfileId") || "");
   const relationshipType = String(formData.get("relationshipType") || "").trim();
@@ -1135,6 +1186,7 @@ export async function createProfileRelationship(formData: FormData) {
 }
 
 export async function deleteProfileRelationship(formData: FormData) {
+  await requireStaff();
   const id = String(formData.get("id") || "");
   const profileId = String(formData.get("profileId") || "");
   await prisma.profileRelationship.delete({ where: { id } });
@@ -1145,6 +1197,7 @@ export async function deleteProfileRelationship(formData: FormData) {
 // ─── Phase 1 lifecycle actions ────────────────────────────────────────────────
 
 export async function reseedJobPhases(jobId: string) {
+  await requireStaff();
   await prisma.renovationPhase.deleteMany({ where: { jobId } });
   await prisma.renovationPhase.createMany({
     data: renovationPhaseDetails.map(([phaseName, description], index) => ({
@@ -1160,6 +1213,7 @@ export async function reseedJobPhases(jobId: string) {
 }
 
 export async function scheduleFollowUps(jobId: string) {
+  await requireStaff();
   const job = await prisma.job.findUniqueOrThrow({
     where: { id: jobId },
     select: { clientProfileId: true, jobName: true },
@@ -1178,6 +1232,7 @@ export async function scheduleFollowUps(jobId: string) {
 }
 
 export async function createFeedbackRequest(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const profileId = String(formData.get("profileId") || "") || null;
   const requestType = String(formData.get("requestType") || "TESTIMONIAL");
@@ -1189,6 +1244,7 @@ export async function createFeedbackRequest(formData: FormData) {
 }
 
 export async function updateFeedbackStatus(formData: FormData) {
+  await requireStaff();
   const id = String(formData.get("id") || "");
   const status = String(formData.get("status") || "");
   const rating = formData.get("rating") ? Number(formData.get("rating")) : null;
@@ -1210,6 +1266,7 @@ export async function updateFeedbackStatus(formData: FormData) {
 }
 
 export async function markJobDepositReceived(jobId: string) {
+  await requireStaff();
   await prisma.job.update({
     where: { id: jobId },
     data: { jobStatus: "DEPOSIT_RECEIVED" },
@@ -1221,6 +1278,7 @@ export async function markJobDepositReceived(jobId: string) {
 // ─── Phase 6A: Transactional email ───────────────────────────────────────────
 
 export async function sendWeeklyReportEmail(reportId: string) {
+  await requireStaff();
   const { sendEmail } = await import("@/lib/email-sender");
   const { buildMailtoLink } = await import("@/lib/email");
   const { dateShort } = await import("@/lib/format");
@@ -1254,6 +1312,7 @@ export async function sendWeeklyReportEmail(reportId: string) {
 }
 
 export async function sendInvoiceEmail(invoiceId: string) {
+  await requireStaff();
   const { sendEmail } = await import("@/lib/email-sender");
   const { money, dateShort } = await import("@/lib/format");
 
@@ -1287,6 +1346,7 @@ export async function sendInvoiceEmail(invoiceId: string) {
 }
 
 export async function sendChangeOrderApprovalEmail(changeOrderId: string) {
+  await requireStaff();
   const { sendEmail } = await import("@/lib/email-sender");
   const { money } = await import("@/lib/format");
 
@@ -1327,6 +1387,7 @@ export async function sendChangeOrderApprovalEmail(changeOrderId: string) {
 }
 
 export async function sendReviewRequestEmail(feedbackRequestId: string) {
+  await requireStaff();
   const { sendEmail } = await import("@/lib/email-sender");
 
   const req = await prisma.feedbackRequest.findUniqueOrThrow({
@@ -1360,6 +1421,7 @@ export async function sendReviewRequestEmail(feedbackRequestId: string) {
 // ─── Phase 6B: CSV import ─────────────────────────────────────────────────────
 
 export async function processLeadImport(formData: FormData) {
+  await requireStaff();
   const rawCsv = String(formData.get("csvData") || "");
   const colName = Number(formData.get("col_name") ?? 0);
   const colType = Number(formData.get("col_type") ?? -1);
@@ -1406,6 +1468,7 @@ export async function processLeadImport(formData: FormData) {
 }
 
 export async function processContactImport(formData: FormData) {
+  await requireStaff();
   const rawCsv = String(formData.get("csvData") || "");
   const colName = Number(formData.get("col_name") ?? 0);
   const colEmail = Number(formData.get("col_email") ?? -1);
@@ -1453,6 +1516,7 @@ export async function processContactImport(formData: FormData) {
 }
 
 export async function processJobImport(formData: FormData) {
+  await requireStaff();
   const rawCsv = String(formData.get("csvData") || "");
   const colName = Number(formData.get("col_name") ?? 0);
   const colAmount = Number(formData.get("col_contractAmount") ?? -1);
@@ -1500,6 +1564,7 @@ export async function processJobImport(formData: FormData) {
 }
 
 export async function processCostCatalogImport(formData: FormData) {
+  await requireStaff();
   const rawCsv = String(formData.get("csvData") || "");
   const colCategory = Number(formData.get("col_category") ?? 0);
   const colName = Number(formData.get("col_serviceName") ?? 1);
@@ -1573,6 +1638,7 @@ function parseCsvLine(line: string): string[] {
 // ─── Phase 6C: UI mode toggle ─────────────────────────────────────────────────
 
 export async function toggleUiMode(formData: FormData) {
+  await requireStaff();
   const { getServerSession } = await import("next-auth");
   const { authOptions } = await import("@/lib/auth");
   const session = await getServerSession(authOptions);
@@ -1587,6 +1653,7 @@ export async function toggleUiMode(formData: FormData) {
 // ─── Phase 5: Before/after proof engine ──────────────────────────────────────
 
 export async function importPhotosFromLogs(jobId: string) {
+  await requireStaff();
   const [fieldReports, weeklyReports] = await Promise.all([
     prisma.fieldReport.findMany({ where: { jobId }, select: { id: true, photos: true, reportDate: true } }),
     prisma.weeklyReport.findMany({ where: { jobId }, select: { id: true, photos: true, weekEnding: true } }),
@@ -1631,6 +1698,7 @@ export async function importPhotosFromLogs(jobId: string) {
 }
 
 export async function deleteJobPhoto(formData: FormData) {
+  await requireStaff();
   const id = String(formData.get("id") || "");
   const photo = await prisma.jobPhoto.findUniqueOrThrow({ where: { id }, select: { jobId: true } });
   await prisma.jobPhoto.delete({ where: { id } });
@@ -1638,6 +1706,7 @@ export async function deleteJobPhoto(formData: FormData) {
 }
 
 export async function tagJobPhoto(formData: FormData) {
+  await requireStaff();
   const id = String(formData.get("id") || "");
   const label = String(formData.get("label") || "DURING");
   const phase = String(formData.get("phase") || "") || null;
@@ -1649,6 +1718,7 @@ export async function tagJobPhoto(formData: FormData) {
 }
 
 export async function addJobPhoto(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const url = String(formData.get("url") || "").trim();
   const label = String(formData.get("label") || "DURING");
@@ -1661,6 +1731,7 @@ export async function addJobPhoto(formData: FormData) {
 }
 
 export async function generateReviewToken(feedbackRequestId: string) {
+  await requireStaff();
   const { randomBytes } = await import("crypto");
   const existing = await prisma.feedbackRequest.findUniqueOrThrow({ where: { id: feedbackRequestId }, select: { token: true, jobId: true } });
   if (existing.token) {
@@ -1676,6 +1747,7 @@ export async function generateReviewToken(feedbackRequestId: string) {
 // ─── Phase 4: AI provider config ─────────────────────────────────────────────
 
 export async function saveAiProviderConfig(formData: FormData) {
+  await requireStaff();
   const provider = String(formData.get("provider") || "");
   const apiKey = String(formData.get("apiKey") || "").trim();
   const defaultModel = String(formData.get("defaultModel") || "").trim() || null;
@@ -1714,6 +1786,7 @@ export async function saveAiProviderConfig(formData: FormData) {
 // ─── Phase 3: client portal + approval actions ───────────────────────────────
 
 export async function generateJobPortalToken(jobId: string) {
+  await requireStaff();
   const { randomBytes } = await import("crypto");
   const existing = await prisma.job.findUnique({ where: { id: jobId }, select: { portalToken: true } });
   if (existing?.portalToken) {
@@ -1726,6 +1799,7 @@ export async function generateJobPortalToken(jobId: string) {
 }
 
 export async function createChangeOrderApproval(changeOrderId: string) {
+  await requireStaff();
   const { randomBytes } = await import("crypto");
   const existing = await prisma.clientApproval.findFirst({ where: { changeOrderId, status: { notIn: ["DECLINED", "EXPIRED"] } } });
   if (existing?.token) {
@@ -1754,6 +1828,7 @@ export async function createChangeOrderApproval(changeOrderId: string) {
 // ─── Phase 2: scope creep actions ────────────────────────────────────────────
 
 export async function captureOutOfScopeRequest(formData: FormData) {
+  await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const profileId = String(formData.get("profileId") || "") || null;
   const subject = String(formData.get("subject") || "").trim();
@@ -1775,6 +1850,7 @@ export async function captureOutOfScopeRequest(formData: FormData) {
 }
 
 export async function createChangeOrderFromRequest(activityId: string, jobId: string) {
+  await requireStaff();
   const activity = await prisma.activity.findUniqueOrThrow({ where: { id: activityId } });
   const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { clientProfileId: true } });
   const count = await prisma.changeOrder.count();
@@ -1796,6 +1872,7 @@ export async function createChangeOrderFromRequest(activityId: string, jobId: st
 }
 
 export async function updatePhaseStatus(formData: FormData) {
+  await requireStaff();
   const phaseId = String(formData.get("phaseId") || "");
   const status = String(formData.get("status") || "");
   const jobId = String(formData.get("jobId") || "");
@@ -1810,6 +1887,7 @@ export async function updatePhaseStatus(formData: FormData) {
 }
 
 export async function createConsultationDepositInvoice(quoteId: string) {
+  await requireStaff();
   const quote = await prisma.quote.findUniqueOrThrow({
     where: { id: quoteId },
     select: { clientProfileId: true, consultationFee: true, quoteName: true },
@@ -1837,6 +1915,7 @@ export async function createConsultationDepositInvoice(quoteId: string) {
 // ─── SMTP email settings ──────────────────────────────────────────────────────
 
 export async function updateSmtpSettings(formData: FormData) {
+  await requireStaff();
   await prisma.organization.update({
     where: { id: DEFAULT_ORG_ID },
     data: {
@@ -1850,6 +1929,7 @@ export async function updateSmtpSettings(formData: FormData) {
 }
 
 export async function testSmtpConnection(formData: FormData) {
+  await requireStaff();
   const fromName = String(formData.get("smtpFromName") || "");
   const fromEmail = String(formData.get("smtpFromEmail") || "");
   const password = String(formData.get("smtpPassword") || "");

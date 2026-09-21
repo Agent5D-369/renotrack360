@@ -1,8 +1,10 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 
 export default async function ServiceTemplatesPage() {
+  await requireStaffPage();
   const templates = await prisma.serviceTemplate.findMany({
     include: {
       steps: { orderBy: { stepNumber: "asc" } },

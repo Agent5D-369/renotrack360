@@ -1,10 +1,12 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createCatalogItem } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { catalogCategories } from "@/lib/constants";
 import { options } from "@/lib/form-options";
 
-export default function NewCatalogItemPage() {
+export default async function NewCatalogItemPage() {
+  await requireStaffPage();
   return (
     <>
       <PageHeader title="New catalog item" body="Add an editable internal planning cost item. These are not copied from Homewyse or any external catalog." />

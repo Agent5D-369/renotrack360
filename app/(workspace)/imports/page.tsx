@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { ImportWizard } from "@/components/import-wizard";
@@ -6,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { DEFAULT_ORG_ID } from "@/lib/constants";
 
 export default async function ImportsPage() {
+  await requireStaffPage();
   const imports = await prisma.importJob.findMany({
     where: { organizationId: DEFAULT_ORG_ID },
     orderBy: { createdAt: "desc" },

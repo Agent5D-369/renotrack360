@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { updateProperty } from "@/app/actions";
 import { AddressFields } from "@/components/address-fields";
 import { EntityForm } from "@/components/entity-form";
@@ -6,6 +7,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditPropertyPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [property, profiles] = await Promise.all([
     prisma.property.findUniqueOrThrow({ where: { id } }),

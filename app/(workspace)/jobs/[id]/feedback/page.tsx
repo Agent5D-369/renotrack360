@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { createFeedbackRequest, updateFeedbackStatus, generateReviewToken } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
@@ -18,6 +19,7 @@ const REQUEST_TYPES = [
 ];
 
 export default async function FeedbackPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [job, org] = await Promise.all([
     prisma.job.findUniqueOrThrow({

@@ -11,7 +11,7 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (password.length < 8) { setErrorMsg("Password must be at least 8 characters."); return; }
+    if (password.length < 12) { setErrorMsg("Password must be at least 12 characters."); return; }
     setErrorMsg("");
     setStatus("loading");
 
@@ -44,7 +44,7 @@ export function AcceptInviteForm({ token, email }: { token: string; email: strin
       </div>
       <div className="grid gap-1">
         <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Create password</label>
-        <input type="password" required minLength={8} value={password} onChange={e => setPassword(e.target.value)}
+        <input type="password" required minLength={12} maxLength={72} value={password} onChange={e => setPassword(e.target.value)}
           className="h-10 rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
       </div>
       {errorMsg && <p className="text-sm text-destructive">{errorMsg}</p>}

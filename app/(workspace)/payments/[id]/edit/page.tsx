@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { updatePayment } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
@@ -6,6 +7,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditPaymentPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [payment, invoices, profiles] = await Promise.all([
     prisma.payment.findUniqueOrThrow({ where: { id } }),

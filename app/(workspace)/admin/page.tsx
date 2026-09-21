@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { redirect } from "next/navigation";
 import { getServerSession } from "next-auth";
 import Link from "next/link";
@@ -9,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { dateShort } from "@/lib/format";
 
 export default async function AdminPage() {
+  await requireStaffPage();
   const session = await getServerSession(authOptions);
   if (!isSuperAdmin(session)) redirect("/home");
 

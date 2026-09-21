@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +6,7 @@ import { Panel } from "@/components/ui";
 import { guidedWorkflows } from "@/lib/help-content";
 
 export default async function GuidedWorkflowPage({ params }: { params: Promise<{ slug: string }> }) {
+  await requireStaffPage();
   const { slug } = await params;
   const workflow = guidedWorkflows.find((item) => item.href.endsWith(slug));
   if (!workflow) notFound();

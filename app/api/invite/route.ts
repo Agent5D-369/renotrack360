@@ -1,11 +1,16 @@
+
+import { staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { randomBytes } from "node:crypto";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email-sender";
+import { z } from "zod";
 
 export async function POST(request: Request) {
+  const denied = await staffApiDenial();
+  if (denied) return denied;
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -15,16 +20,20 @@ export async function POST(request: Request) {
   const membership = await prisma.membership.findUnique({
     where: { userId_organizationId: { userId: session.user.id, organizationId: orgId } }
   });
-  if (!membership || !["OWNER", "ADMIN"].includes(membership.role)) {
+  if (!membership || membership.status !== "ACTIVE" || !["OWNER", "ADMIN"].includes(membership.role)) {
     return NextResponse.json({ error: "Only owners and admins can invite members" }, { status: 403 });
   }
 
-  const { email, role } = await request.json().catch(() => ({})) as { email?: string; role?: string };
-  if (!email || typeof email !== "string") {
-    return NextResponse.json({ error: "Email is required" }, { status: 400 });
-  }
+  const parsed = z.object({ email: z.string().trim().email().max(254), role: z.enum(["OWNER", "ADMIN"]).default("ADMIN") })
+    .safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "A valid email and owner/admin role are required" }, { status: 400 });
+  const { email, role } = parsed.data;
+  if (role === "OWNER" && membership.role !== "OWNER") return NextResponse.json({ error: "Only an owner can invite another owner" }, { status: 403 });
 
   const normalizedEmail = email.toLowerCase().trim();
+  if (await prisma.user.findUnique({ where: { email: normalizedEmail } })) {
+    return NextResponse.json({ error: "This account already exists. Manage its membership separately; invitations cannot reset existing accounts." }, { status: 409 });
+  }
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
@@ -32,7 +41,7 @@ export async function POST(request: Request) {
     data: {
       email: normalizedEmail,
       organizationId: orgId,
-      role: (role as never) ?? "ADMIN",
+      role,
       token,
       expiresAt,
       invitedByUserId: session.user.id

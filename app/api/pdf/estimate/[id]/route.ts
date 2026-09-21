@@ -1,8 +1,12 @@
+
+import { staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await staffApiDenial();
+  if (denied) return denied;
   const { id } = await params;
   const quote = await prisma.quote.findUniqueOrThrow({
     where: { id },

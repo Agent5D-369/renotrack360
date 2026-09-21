@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { convertQuoteToJob, deleteLead } from "@/app/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { PageHeader } from "@/components/page-header";
@@ -8,6 +9,7 @@ import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const lead = await prisma.lead.findUniqueOrThrow({ where: { id }, include: { profile: true, property: true, quotes: true, owner: true } });
   return (

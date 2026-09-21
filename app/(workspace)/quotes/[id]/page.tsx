@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { addCatalogItemToQuote, convertQuoteToJob, createEstimateFromQuote, createQuoteLineItem, createConsultationDepositInvoice } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
@@ -10,6 +11,7 @@ import { options } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [quote, catalog] = await Promise.all([
     prisma.quote.findUniqueOrThrow({

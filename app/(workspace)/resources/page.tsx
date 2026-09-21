@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ResourcesPage() {
+  await requireStaffPage();
   const [materials, requests, equipment, tools] = await Promise.all([
     prisma.materialItem.findMany({ orderBy: { itemName: "asc" } }),
     prisma.materialRequest.findMany({ include: { job: true }, orderBy: { neededBy: "asc" }, take: 8 }),

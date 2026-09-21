@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { prisma } from "@/lib/prisma";
@@ -148,6 +149,7 @@ const stages = [
 ] as const;
 
 export default async function LifecyclePage() {
+  await requireStaffPage();
   // Live pipeline counts
   const [
     openLeads,

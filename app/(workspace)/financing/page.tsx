@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
 import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function FinancingPage() {
+  await requireStaffPage();
   const records = await prisma.financing.findMany({ include: { clientProfile: true, quote: true, job: true }, orderBy: { updatedAt: "desc" } });
   return (
     <DataTable

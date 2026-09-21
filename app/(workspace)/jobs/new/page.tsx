@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createJob } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +6,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function NewJobPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
+  await requireStaffPage();
   const { returnTo } = await searchParams;
   const [profiles, properties, quotes] = await Promise.all([
     prisma.profile.findMany({ select: { id: true, profileName: true } }),

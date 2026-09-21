@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
@@ -5,6 +6,7 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function AgreementsPage() {
+  await requireStaffPage();
   const [templates, agreements] = await Promise.all([
     prisma.agreementTemplate.findMany({ orderBy: { templateName: "asc" } }),
     prisma.agreement.findMany({ include: { profile: true, job: true, signatures: true, auditEvents: true }, orderBy: { updatedAt: "desc" } })

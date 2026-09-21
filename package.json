@@ -13,6 +13,8 @@
     "test:production-start-safety": "tsx --test scripts/database-safety.test.ts",
     "verify:preservation": "node scripts/preservation.mjs verify",
     "test:migrations": "node scripts/test-migrations.mjs",
+    "test:access": "node scripts/test-access.mjs",
+    "test:access-http": "node scripts/access-http-smoke.mjs",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",

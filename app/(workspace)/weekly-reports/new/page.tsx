@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createWeeklyReport } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { WeeklyReportForm } from "@/components/weekly-report-form";
@@ -8,6 +9,7 @@ export default async function NewWeeklyReportPage({
 }: {
   searchParams: Promise<Record<string, string>>;
 }) {
+  await requireStaffPage();
   const { jobId: defaultJobId = "" } = await searchParams;
   const jobs = await prisma.job.findMany({
     select: { id: true, jobName: true },

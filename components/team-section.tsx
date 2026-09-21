@@ -19,7 +19,7 @@ const ROLE_LABELS: Record<string, string> = {
 
 export function TeamSection({ members, orgId }: { members: Member[]; orgId: string }) {
   const [email, setEmail] = useState("");
-  const [role, setRole] = useState("ADMIN");
+  const role = "ADMIN";
   const [status, setStatus] = useState<"idle" | "loading" | "sent" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
 
@@ -79,12 +79,7 @@ export function TeamSection({ members, orgId }: { members: Member[]; orgId: stri
               </div>
               <div className="grid gap-1">
                 <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Role</label>
-                <select value={role} onChange={e => setRole(e.target.value)}
-                  className="h-10 rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-primary">
-                  {Object.entries(ROLE_LABELS).filter(([k]) => k !== "OWNER").map(([k, v]) => (
-                    <option key={k} value={k}>{v}</option>
-                  ))}
-                </select>
+                <p className="flex h-10 items-center text-sm">Administrator access</p>
               </div>
               <button type="submit" disabled={status === "loading"}
                 className="h-10 rounded-md bg-primary px-4 text-sm font-bold text-primary-foreground hover:opacity-90 disabled:opacity-60">

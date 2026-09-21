@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
@@ -5,6 +6,7 @@ import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function JobsPage() {
+  await requireStaffPage();
   const now = new Date();
   const jobs = await prisma.job.findMany({
     include: { clientProfile: true, property: true },

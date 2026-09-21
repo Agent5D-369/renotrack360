@@ -1,8 +1,10 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 
 export default async function ChecklistsPage() {
+  await requireStaffPage();
   const [templates, runs, evidence] = await Promise.all([
     prisma.checklistTemplate.findMany({ include: { items: true, runs: true }, orderBy: { category: "asc" } }),
     prisma.checklistRun.findMany({ include: { template: true, items: true }, orderBy: { updatedAt: "desc" }, take: 10 }),

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { deleteProperty } from "@/app/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
@@ -7,6 +8,7 @@ import { money, titleFromEnum, dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const property = await prisma.property.findUniqueOrThrow({
     where: { id },

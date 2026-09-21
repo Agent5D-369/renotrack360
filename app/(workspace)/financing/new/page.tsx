@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createFinancing } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +6,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function NewFinancingPage() {
+  await requireStaffPage();
   const [profiles, quotes, jobs] = await Promise.all([
     prisma.profile.findMany({ select: { id: true, profileName: true } }),
     prisma.quote.findMany({ select: { id: true, quoteName: true } }),

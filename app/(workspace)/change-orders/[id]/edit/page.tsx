@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { updateChangeOrder } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
@@ -6,6 +7,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditChangeOrderPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [order, jobs, profiles] = await Promise.all([
     prisma.changeOrder.findUniqueOrThrow({ where: { id } }),

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { createProfileRelationship, deleteProfile, deleteProfileRelationship } from "@/app/actions";
 import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
@@ -9,6 +10,7 @@ import { dateShort, money, titleFromEnum } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ProfileDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [profile, allProfiles] = await Promise.all([
     prisma.profile.findUniqueOrThrow({

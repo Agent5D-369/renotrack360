@@ -1,8 +1,10 @@
+import { findStaff } from "@/lib/staff-record";
 import { PrismaAdapter } from "@auth/prisma-adapter";
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import bcrypt from "bcryptjs";
+import { timingSafeEqual } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 
 const googleProvider =
@@ -26,80 +28,30 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials) {
-        const email = credentials?.email?.toLowerCase();
-        const password = credentials?.password;
-        if (!email || !password) return null;
-
-        const user = await prisma.user.findUnique({ where: { email } });
-        if (user?.passwordHash && (await bcrypt.compare(password, user.passwordHash))) {
-          return { id: user.id, email: user.email, name: user.name };
-        }
-
-        if (
-          email === process.env.ADMIN_EMAIL?.toLowerCase() &&
-          password === process.env.ADMIN_PASSWORD
-        ) {
-          const org = await prisma.organization.upsert({
-            where: { id: "flipside-org" },
-            update: {},
-            create: { id: "flipside-org", name: "My Organization" }
-          });
-          const created = await prisma.user.upsert({
-            where: { email },
-            update: { organizationId: org.id },
-            create: {
-              email,
-              name: "Owner",
-              role: "OWNER",
-              organizationId: org.id,
-              passwordHash: await bcrypt.hash(password, 10)
-            }
-          });
-          return { id: created.id, email: created.email, name: created.name };
-        }
-
-        return null;
+        if (typeof credentials?.email !== "string" || typeof credentials.password !== "string") return null;
+        const email = credentials.email.toLowerCase().trim();
+        const staff = await findStaff({ email });
+        if (!staff) return null;
+        const user = await prisma.user.findUnique({ where: { id: staff.id }, select: { passwordHash: true } });
+        const storedPasswordMatches = Boolean(user?.passwordHash && await bcrypt.compare(credentials.password, user.passwordHash));
+        const configuredPassword = process.env.ADMIN_PASSWORD ?? "";
+        const provided = Buffer.from(credentials.password);
+        const expected = Buffer.from(configuredPassword);
+        const configuredOwnerMatches = staff.role === "OWNER"
+          && email === process.env.ADMIN_EMAIL?.toLowerCase().trim()
+          && configuredPassword.length >= 12
+          && provided.length === expected.length
+          && timingSafeEqual(provided, expected);
+        if (!storedPasswordMatches && !configuredOwnerMatches) return null;
+        return { id: staff.id, email: staff.email, name: staff.name };
       }
     })
   ],
   callbacks: {
-    async signIn({ user, account }) {
-      // For OAuth sign-ins, provision an org if this is a new user
-      if (account?.provider === "google" && user.email) {
-        const existing = await prisma.user.findUnique({ where: { email: user.email } });
-        if (!existing?.organizationId) {
-          const domain = user.email.split("@")[1] ?? "mycompany";
-          const orgName = domain.split(".")[0] ?? "My Organization";
-          const org = await prisma.organization.create({
-            data: { name: orgName.charAt(0).toUpperCase() + orgName.slice(1) }
-          });
-          await prisma.user.update({
-            where: { email: user.email },
-            data: { organizationId: org.id, role: "OWNER" }
-          });
-          await prisma.membership.create({
-            data: {
-              userId: existing?.id ?? user.id!,
-              organizationId: org.id,
-              role: "OWNER",
-              status: "ACTIVE",
-              acceptedAt: new Date()
-            }
-          }).catch(() => null);
-          await prisma.subscription.create({
-            data: {
-              organizationId: org.id,
-              planTier: "PRO",
-              status: "TRIALING",
-              trialEndsAt: new Date(Date.now() + 14 * 86400000),
-              activeJobLimit: 25,
-              monthlyEstimateLimit: 250,
-              userLimit: 5
-            }
-          }).catch(() => null);
-        }
-      }
-      return true;
+    async signIn({ user, account, profile }) {
+      if (!user.email || !["google", "credentials"].includes(account?.provider ?? "")) return false;
+      if (account?.provider === "google" && (profile as { email_verified?: boolean } | undefined)?.email_verified !== true) return false;
+      return Boolean(await findStaff({ email: user.email.toLowerCase().trim() }));
     },
     async jwt({ token, user, trigger }) {
       if (user) {

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createProperty } from "@/app/actions";
 import { AddressFields } from "@/components/address-fields";
 import { EntityForm } from "@/components/entity-form";
@@ -7,6 +8,7 @@ import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 
 export default async function NewPropertyPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
+  await requireStaffPage();
   const { returnTo } = await searchParams;
   const [profiles, org] = await Promise.all([
     prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),

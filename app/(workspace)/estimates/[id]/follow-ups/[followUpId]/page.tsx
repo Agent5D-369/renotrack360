@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { updateEstimateFollowUp } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { Panel, Button, LinkButton } from "@/components/ui";
@@ -8,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 const FOLLOW_UP_STATUSES = ["SCHEDULED", "DUE", "COMPLETED", "SKIPPED"] as const;
 
 export default async function FollowUpDetailPage({ params }: { params: Promise<{ id: string; followUpId: string }> }) {
+  await requireStaffPage();
   const { id, followUpId } = await params;
   const followUp = await prisma.estimateFollowUp.findUniqueOrThrow({
     where: { id: followUpId },

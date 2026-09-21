@@ -1,8 +1,10 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { renovationPhaseDetails } from "@/lib/constants";
 
-export default function OrderOfOperationsPage() {
+export default async function OrderOfOperationsPage() {
+  await requireStaffPage();
   const guidance = [
     "This is the right default order for most residential renovation work because it protects rough trades and inspections before finish work begins.",
     "For complex jobs, add two management gates around it: preconstruction before Site Prep and closeout/warranty after Punch List.",

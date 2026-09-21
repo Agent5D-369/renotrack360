@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { updateWeeklyReport } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
@@ -6,6 +7,7 @@ import { relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditWeeklyReportPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [report, jobs] = await Promise.all([
     prisma.weeklyReport.findUniqueOrThrow({ where: { id } }),

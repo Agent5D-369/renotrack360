@@ -1,7 +1,9 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import { prisma } from "@/lib/prisma";
 import { dateShort, money } from "@/lib/format";
 
 export default async function WaitlistAdminPage() {
+  await requireStaffPage();
   const [entries, totalCount] = await Promise.all([
     prisma.waitlistEntry.findMany({
       orderBy: { createdAt: "desc" },

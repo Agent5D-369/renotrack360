@@ -1,48 +1,16 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 import { prisma } from "@/lib/prisma";
+import { acceptStaffInvite, inviteAcceptanceInput, InviteAcceptanceError } from "@/lib/invite-acceptance";
 
 export async function POST(request: Request) {
-  const { token, name, password } = await request.json().catch(() => ({})) as {
-    token?: string; name?: string; password?: string;
-  };
-
-  if (!token || !name || !password) {
-    return NextResponse.json({ error: "token, name, and password are required" }, { status: 400 });
+  const parsed = inviteAcceptanceInput.safeParse(await request.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: "Provide a valid invitation, name and password of at least 12 characters (at most 72 UTF-8 bytes)." }, { status: 400 });
+  try {
+    await acceptStaffInvite(prisma, parsed.data);
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    if (error instanceof InviteAcceptanceError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error("[invite-accept] failed");
+    return NextResponse.json({ error: "Unable to accept this invitation." }, { status: 500 });
   }
-  if (password.length < 8) {
-    return NextResponse.json({ error: "Password must be at least 8 characters." }, { status: 400 });
-  }
-
-  const invite = await prisma.inviteToken.findUnique({ where: { token } });
-  if (!invite || invite.acceptedAt || invite.expiresAt < new Date()) {
-    return NextResponse.json({ error: "This invite link is invalid or has expired." }, { status: 400 });
-  }
-
-  const passwordHash = await bcrypt.hash(password, 10);
-  const existing = await prisma.user.findUnique({ where: { email: invite.email } });
-
-  await prisma.$transaction(async (tx) => {
-    const user = existing
-      ? await tx.user.update({ where: { id: existing.id }, data: { name, passwordHash, organizationId: invite.organizationId } })
-      : await tx.user.create({
-          data: {
-            email: invite.email,
-            name,
-            passwordHash,
-            role: invite.role,
-            organizationId: invite.organizationId
-          }
-        });
-
-    await tx.membership.upsert({
-      where: { userId_organizationId: { userId: user.id, organizationId: invite.organizationId } },
-      update: { role: invite.role, status: "ACTIVE", acceptedAt: new Date() },
-      create: { userId: user.id, organizationId: invite.organizationId, role: invite.role, status: "ACTIVE", acceptedAt: new Date() }
-    });
-
-    await tx.inviteToken.update({ where: { id: invite.id }, data: { acceptedAt: new Date() } });
-  });
-
-  return NextResponse.json({ ok: true });
 }

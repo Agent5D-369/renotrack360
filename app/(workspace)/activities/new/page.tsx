@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createActivity } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { options } from "@/lib/form-options";
@@ -8,6 +9,7 @@ export default async function NewActivityPage({
 }: {
   searchParams: Promise<Record<string, string>>;
 }) {
+  await requireStaffPage();
   const sp = await searchParams;
   const [profiles, leads, jobs] = await Promise.all([
     prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),

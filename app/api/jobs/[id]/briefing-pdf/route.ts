@@ -1,8 +1,12 @@
+
+import { staffApiDenial } from "@/lib/staff-access";
 import { NextRequest, NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const denied = await staffApiDenial();
+  if (denied) return denied;
   try {
     const { id } = await params;
     const form = await req.formData();

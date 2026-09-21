@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
@@ -14,6 +15,7 @@ const workflows = [
 ] as const;
 
 export default async function AiTeamPage() {
+  await requireStaffPage();
   const [agents, tasks, providers, usage] = await Promise.all([
     prisma.aiAgent.findMany({ include: { tasks: true }, orderBy: { agentName: "asc" } }),
     prisma.aiTask.findMany({ include: { agent: true }, orderBy: { createdAt: "desc" }, take: 12 }),

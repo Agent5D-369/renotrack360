@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function CostIntelligencePage() {
+  await requireStaffPage();
   const [assemblies, marketFactors, laborRates, allowances, vendorQuotes, actualCosts] = await Promise.all([
     prisma.costAssembly.findMany({ include: { items: true }, orderBy: { assemblyName: "asc" } }),
     prisma.marketCostFactor.findMany({ orderBy: { marketName: "asc" } }),

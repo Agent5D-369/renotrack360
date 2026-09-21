@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { captureOutOfScopeRequest, createChangeOrderFromRequest } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
@@ -6,6 +7,7 @@ import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ScopeCreepPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },

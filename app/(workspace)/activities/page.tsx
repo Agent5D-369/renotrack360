@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ActivitiesPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
+  await requireStaffPage();
   const sp = await searchParams;
   const now = new Date();
   const where = sp.due === "true" ? { dueDate: { lte: now }, completedAt: null } : {};

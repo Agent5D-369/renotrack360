@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { createChangeOrder } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -9,6 +10,7 @@ export default async function NewChangeOrderPage({
 }: {
   searchParams: Promise<Record<string, string>>;
 }) {
+  await requireStaffPage();
   const sp = await searchParams;
   const preJobId = sp.jobId ?? "";
   const preReason = sp.reason ? decodeURIComponent(sp.reason) : "";

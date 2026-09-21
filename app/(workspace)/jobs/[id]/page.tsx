@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { BookOpen } from "lucide-react";
 import { createTask, deployProjectTaskTemplate, reseedJobPhases, updatePhaseStatus, captureOutOfScopeRequest, generateJobPortalToken } from "@/app/actions";
@@ -14,6 +15,7 @@ import { buildSmsLink } from "@/lib/sms";
 import { prisma } from "@/lib/prisma";
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },

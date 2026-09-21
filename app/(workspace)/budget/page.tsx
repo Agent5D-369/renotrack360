@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
@@ -35,6 +36,7 @@ function LeakRow({ severity, label, value, detail, href, action }: {
 }
 
 export default async function ProfitLeakDashboard() {
+  await requireStaffPage();
   const now = new Date();
   const threeDaysAgo = new Date(now.getTime() - 3 * 86_400_000);
   const fourteenDaysAgo = new Date(now.getTime() - 14 * 86_400_000);

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { BookOpen, CheckCircle2, Users } from "lucide-react";
 import { PageHeader } from "@/components/page-header";
@@ -16,7 +17,8 @@ const phaseColors: Record<LibraryPhase, { badge: string; border: string; dot: st
   3: { badge: "bg-violet-100 text-violet-800", border: "border-violet-200", dot: "bg-violet-400" }
 };
 
-export default function LibraryPage() {
+export default async function LibraryPage() {
+  await requireStaffPage();
   const phases: LibraryPhase[] = [1, 2, 3];
 
   return (

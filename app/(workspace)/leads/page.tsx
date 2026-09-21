@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
@@ -15,6 +16,7 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 export default async function LeadsPage() {
+  await requireStaffPage();
   const [leads, stages] = await Promise.all([
     prisma.lead.findMany({
       where: { deletedAt: null },

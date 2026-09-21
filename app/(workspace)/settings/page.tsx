@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import { updateSettings, updateSettingsTerms, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection } from "@/app/actions";
 import { AiTestButton } from "@/components/ai-test-button";
 import { EntityForm } from "@/components/entity-form";
@@ -19,6 +20,7 @@ const PROVIDERS = [
 ] as const;
 
 export default async function SettingsPage() {
+  await requireStaffPage();
   const org = await prisma.organization.upsert({
     where: { id: DEFAULT_ORG_ID },
     update: {},

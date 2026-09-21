@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
@@ -5,6 +6,7 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ApprovalsPage() {
+  await requireStaffPage();
   const approvals = await prisma.clientApproval.findMany({ include: { estimate: { include: { clientProfile: true } } }, orderBy: { updatedAt: "desc" } });
   const options = await prisma.estimateOption.findMany({ include: { estimate: true }, orderBy: { sortOrder: "asc" } });
 

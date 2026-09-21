@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
@@ -26,6 +27,7 @@ export default async function ContactsPage({
 }: {
   searchParams: Promise<{ kind?: string; type?: string }>;
 }) {
+  await requireStaffPage();
   const { kind, type } = await searchParams;
 
   const where: Prisma.ProfileWhereInput = {};

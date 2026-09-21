@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { createProfile } from "@/app/actions";
@@ -5,6 +6,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function NewProfilePage() {
+  await requireStaffPage();
   const [profiles, serviceTags] = await Promise.all([
     prisma.profile.findMany({ select: { id: true, profileName: true, profileKind: true }, orderBy: { profileName: "asc" } }),
     prisma.serviceTag.findMany({ where: { active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] })

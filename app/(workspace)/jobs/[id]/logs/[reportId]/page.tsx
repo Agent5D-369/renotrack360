@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { deleteFieldReport } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
@@ -6,6 +7,7 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function FieldReportPage({ params }: { params: Promise<{ id: string; reportId: string }> }) {
+  await requireStaffPage();
   const { id, reportId } = await params;
   const [job, report] = await Promise.all([
     prisma.job.findUniqueOrThrow({ where: { id }, select: { id: true, jobName: true } }),

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import { createBudgetLine, logActualCost } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
@@ -18,6 +19,7 @@ const LINE_TYPE_COLORS: Record<string, string> = {
 };
 
 export default async function JobBudgetPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },

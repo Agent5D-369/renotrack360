@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { updateQuote } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +6,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditQuotePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [quote, profiles, properties, leads] = await Promise.all([
     prisma.quote.findUniqueOrThrow({ where: { id } }),

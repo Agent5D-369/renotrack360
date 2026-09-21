@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 
 export default async function TranslationsPage() {
+  await requireStaffPage();
   const records = await prisma.translationRecord.findMany({ orderBy: { updatedAt: "desc" } });
   return (
     <>

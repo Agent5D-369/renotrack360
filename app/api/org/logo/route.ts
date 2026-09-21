@@ -1,3 +1,5 @@
+
+import { staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
@@ -7,6 +9,8 @@ import { DEFAULT_ORG_ID } from "@/lib/constants";
 const MAX_BYTES = 3 * 1024 * 1024; // 3 MB
 
 export async function POST(request: Request) {
+  const denied = await staffApiDenial();
+  if (denied) return denied;
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -52,6 +56,8 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE() {
+  const denied = await staffApiDenial();
+  if (denied) return denied;
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

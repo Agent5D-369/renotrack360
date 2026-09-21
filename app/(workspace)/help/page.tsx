@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { guidedWorkflows, helpTopics } from "@/lib/help-content";
 
-export default function HelpPage() {
+export default async function HelpPage() {
+  await requireStaffPage();
   return (
     <>
       <PageHeader title="Help Center" body="Plainspoken operating guidance for renovation workflows, field usage, estimates, selections, client updates, and security basics." />

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { Camera, Clock, FileBarChart2, TriangleAlert } from "lucide-react";
 import { completeTask } from "@/app/actions";
@@ -7,6 +8,7 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function FieldPage() {
+  await requireStaffPage();
   const now = new Date();
 
   const [tasks, evidence, activeJobs] = await Promise.all([

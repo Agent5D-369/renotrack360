@@ -1,9 +1,11 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { guidedWorkflows } from "@/lib/help-content";
 
-export default function GuidedPage() {
+export default async function GuidedPage() {
+  await requireStaffPage();
   return (
     <>
       <PageHeader

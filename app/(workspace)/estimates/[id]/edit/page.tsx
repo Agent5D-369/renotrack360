@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { updateEstimate } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +6,7 @@ import { options } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditEstimatePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const estimate = await prisma.estimate.findUniqueOrThrow({ where: { id } });
   const saveEstimate = updateEstimate.bind(null, estimate.id);

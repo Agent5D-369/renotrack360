@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
@@ -5,6 +6,7 @@ import { money, dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ChangeOrdersPage() {
+  await requireStaffPage();
   const now = new Date();
   const threeDaysAgo = new Date(now.getTime() - 3 * 86_400_000);
   const orders = await prisma.changeOrder.findMany({ include: { job: true, clientProfile: true }, orderBy: { updatedAt: "desc" } });

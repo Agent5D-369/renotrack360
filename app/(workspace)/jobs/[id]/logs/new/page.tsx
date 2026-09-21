@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { createFieldReport } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
@@ -6,6 +7,7 @@ import { phaseNameToLibrarySlug } from "@/lib/construction-library";
 import { prisma } from "@/lib/prisma";
 
 export default async function NewFieldReportPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },

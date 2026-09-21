@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { deleteEstimateOption, saveEstimateOption } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
@@ -36,6 +37,7 @@ const tiers = [
 ] as const;
 
 export default async function ProposalPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const estimate = await prisma.estimate.findUniqueOrThrow({
     where: { id },

@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { DataTable } from "@/components/data-table";
 import { LinkButton } from "@/components/ui";
 import { StatusPill } from "@/components/status-pill";
@@ -5,6 +6,7 @@ import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function QuotesPage() {
+  await requireStaffPage();
   const quotes = await prisma.quote.findMany({ include: { clientProfile: true, property: true }, orderBy: { updatedAt: "desc" } });
   return (
     <div className="grid gap-5">

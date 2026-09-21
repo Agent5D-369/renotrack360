@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { updateJob } from "@/app/actions";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -5,6 +6,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 
 export default async function EditJobPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireStaffPage();
   const { id } = await params;
   const [job, profiles, properties, quotes, phases] = await Promise.all([
     prisma.job.findUniqueOrThrow({ where: { id } }),

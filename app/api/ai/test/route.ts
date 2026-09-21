@@ -1,9 +1,13 @@
+
+import { staffApiDenial } from "@/lib/staff-access";
 ﻿import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { callLLM, getActiveProvider } from "@/lib/ai";
 
 export async function POST() {
+  const denied = await staffApiDenial();
+  if (denied) return denied;
   const session = await getServerSession(authOptions);
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

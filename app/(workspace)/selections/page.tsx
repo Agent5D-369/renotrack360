@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
@@ -5,6 +6,7 @@ import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function SelectionsPage() {
+  await requireStaffPage();
   const sheets = await prisma.selectionSheet.findMany({
     include: { job: true, clientProfile: true, items: { include: { options: true, approvals: true } } },
     orderBy: { updatedAt: "desc" }

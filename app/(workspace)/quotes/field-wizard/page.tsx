@@ -1,3 +1,4 @@
+import { requireStaffPage } from "@/lib/staff-access";
 ﻿import { ClipboardCheck, FileText, Home, Ruler, ShieldCheck } from "lucide-react";
 import { createQuoteFromFieldWizard } from "@/app/actions";
 import { FieldWizardControls } from "@/components/field-wizard-controls";
@@ -53,6 +54,7 @@ const extraRoomSlots = Array.from({ length: 6 }, (_, index) => index + 1);
 const customRoomTypes = ["Bedroom", "Bathroom", "Kitchen", "Outdoor kitchen", "Living room", "Dining room", "Office", "Laundry room", "Garage", "Hall", "Flex area"] as const;
 
 export default async function FieldQuoteWizardPage() {
+  await requireStaffPage();
   const [profiles, properties, leads] = await Promise.all([
     prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
     prisma.property.findMany({ select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),

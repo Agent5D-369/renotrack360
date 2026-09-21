@@ -9,7 +9,7 @@ export default async function LoginPage() {
 
   const demoEmail = process.env.DEMO_USER_EMAIL ?? "demo@renotrack360.com";
   const demoPassword = process.env.DEMO_USER_PASSWORD ?? "LiveDemo2025";
-  const showDemo = process.env.TENANT_MODE === "DEMO" || process.env.SHOW_DEMO_CREDENTIALS === "true";
+  const showDemo = false;
 
   return (
     <main className="grid min-h-screen place-items-center bg-[#16231f] px-5">
