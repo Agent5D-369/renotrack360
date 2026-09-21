@@ -17,7 +17,7 @@ A production-shaped contractor command center for Flipside Renovations: CRM prof
 1. Install dependencies:
 
 ```bash
-corepack pnpm install
+npm ci --legacy-peer-deps
 ```
 
 2. Copy environment variables:
@@ -28,53 +28,47 @@ cp .env.example .env
 
 3. Set `DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`, `ADMIN_EMAIL`, and `ADMIN_PASSWORD`.
 
-4. Run migrations and seed data:
+4. Run migrations on a new local database. Existing databases must follow
+   [the preservation runbook](docs/preservation-release-runbook.md) first.
 
 ```bash
-corepack pnpm db:deploy
-corepack pnpm db:seed
+npm run db:deploy
 ```
 
 5. Start development:
 
 ```bash
-corepack pnpm dev
+npm run dev
 ```
 
-Open `http://localhost:3000` and sign in with your configured admin email/password.
+Open `http://localhost:3010`. Demo seed/reset is optional and only permitted with
+`FLIPSIDE_DATABASE_PURPOSE=disposable-demo`, a loopback database named
+`flipside_demo_<name>`, and a non-production environment. It destroys demo data.
+Run `npm run db:seed` only on that disposable target, never on preserved records.
 
 ## Prisma Commands
 
 ```bash
-corepack pnpm db:generate
-corepack pnpm db:migrate
-corepack pnpm db:deploy
-corepack pnpm db:seed
+npm run db:generate
+npm run db:migrate
+npm run db:deploy
 ```
 
 The initial migration lives in `prisma/migrations/20260430000000_init/migration.sql`.
 
 ## Railway Deployment
 
-1. Create a Railway project from `https://github.com/Agent5D-369/Renovation-Command-Center`.
-2. Add Railway PostgreSQL.
-3. Set these variables in Railway:
-   - `DATABASE_URL`
-   - `NEXTAUTH_SECRET`
-   - `NEXTAUTH_URL`
-   - `ADMIN_EMAIL`
-   - `ADMIN_PASSWORD`
-   - optional `STRIPE_SECRET_KEY`
-   - optional `STRIPE_CURRENCY=usd`
-   - optional `APP_BASE_URL`
-4. Railway uses `railway.json`:
-   - Build: `corepack enable && corepack pnpm install --frozen-lockfile && corepack pnpm build`
-   - Start: `corepack pnpm db:deploy && corepack pnpm start`
-5. Run seed once from a Railway shell if desired:
+Use the existing RenoTrack360 Railway project and `Agent5D-369/renotrack360`
+repository. Do not create a replacement project/database. Production startup is
+only `npm start`; schema migration and seed/reset never run automatically.
 
-```bash
-corepack pnpm db:seed
-```
+Before deployment, follow [the preservation runbook](docs/preservation-release-runbook.md).
+The existing database was created without a Prisma migration ledger. A verified
+baseline is required before `migrate deploy` can be used there. Never run demo seed
+on Railway. Keep the existing environment variables and OAuth/domain settings.
+
+The npm lockfile is the build authority; Node is pinned in `.nvmrc`. The older pnpm
+lockfile is retained for history and is not the release install path.
 
 ## Stripe
 

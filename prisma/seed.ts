@@ -4,8 +4,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { catalogCategories, DEFAULT_ORG_ID, renovationPhaseDetails, renovationPhases } from "../lib/constants";
 import { calculateLineItem, calculateQuoteTotals } from "../lib/calculations";
+import { assertDisposableDemoDatabase } from "../scripts/database-safety";
 
 loadLocalEnv();
+assertDisposableDemoDatabase();
 
 const prisma = new PrismaClient();
 

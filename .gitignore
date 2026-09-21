@@ -10,3 +10,4 @@ tsconfig.tsbuildinfo
 .railway/
 .sentry-build-plugin-tmp/
 sentry-upload-*.json
+.preservation/

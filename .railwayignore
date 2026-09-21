@@ -1,0 +1,9 @@
+.git/
+.claude/
+.env
+.env.*
+.preservation/
+.next/
+node_modules/
+*.log
+tsconfig.tsbuildinfo

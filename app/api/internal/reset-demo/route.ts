@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { execSync } from "node:child_process";
+import { assertDisposableDemoDatabase } from "@/scripts/database-safety";
 
 export async function POST(request: Request) {
+  try {
+    assertDisposableDemoDatabase();
+  } catch {
+    return NextResponse.json({ error: "Reset is restricted to isolated local demo databases" }, { status: 403 });
+  }
   // Only allowed in DEMO mode
   if (process.env.TENANT_MODE !== "DEMO") {
     return NextResponse.json({ error: "Not a demo instance" }, { status: 403 });
@@ -21,9 +27,8 @@ export async function POST(request: Request) {
       timeout: 120_000
     });
     return NextResponse.json({ ok: true, resetAt: new Date().toISOString() });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[demo-reset] seed failed:", msg);
-    return NextResponse.json({ error: "Seed failed", detail: msg }, { status: 500 });
+  } catch {
+    console.error("[demo-reset] seed failed");
+    return NextResponse.json({ error: "Seed failed" }, { status: 500 });
   }
 }
