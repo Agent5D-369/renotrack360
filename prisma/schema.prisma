@@ -1590,6 +1590,27 @@ model WeeklyReport {
   job             Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  publications    WeeklyReportPublication[]
+}
+
+model WeeklyReportPublication {
+  id              String   @id @default(cuid())
+  reportId        String
+  revision        Int
+  sourceDigest    String
+  reviewedById    String
+  publishedAt     DateTime @default(now())
+  weekEnding      DateTime
+  workCompleted   String   @db.Text
+  issuesFound     String?  @db.Text
+  decisionsNeeded String?  @db.Text
+  budgetNotes     String?  @db.Text
+  scheduleNotes   String?  @db.Text
+  nextWeekPlan    String?  @db.Text
+  clientSummary   String?  @db.Text
+  report          WeeklyReport @relation(fields: [reportId], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, revision])
 }
 
 model ChangeOrder {

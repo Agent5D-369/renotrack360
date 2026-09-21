@@ -3,6 +3,7 @@ import { staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_ORG_ID } from "@/lib/constants";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
@@ -13,11 +14,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       where: { id },
       include: { job: { include: { clientProfile: true, property: true, organization: true } } }
     });
-    if (!report) return NextResponse.json({ error: "Weekly report not found" }, { status: 404 });
+    if (!report || report.job.organizationId !== DEFAULT_ORG_ID) return NextResponse.json({ error: "Weekly report not found" }, { status: 404 });
     const org = report.job.organization;
 
     const pdf = await buildDocument({
-      title: "Weekly Project Report",
+      title: "Weekly Project Report - Staff Draft",
       number: report.job.jobName,
       client: report.job.clientProfile?.profileName,
       property: report.job.property?.propertyAddress,
@@ -40,15 +41,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         website: org.website
       }
     });
-    // Mark as sent on first download
-    if (!report.sentAt) {
-      await prisma.weeklyReport.update({ where: { id }, data: { sentAt: new Date() } });
-    }
     const weekEnding = report.weekEnding.toISOString().slice(0, 10);
     const slug = report.job.jobName.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 40);
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
+        "Cache-Control": "private, no-store",
         "Content-Disposition": `attachment; filename="weekly-report-${slug}-${weekEnding}.pdf"`
       }
     });

@@ -137,7 +137,7 @@ function files(directory: string): string[] {
 test("every staff entrypoint checks authorization before its body", () => {
   const publicRoutes = new Set([
     "auth/[...nextauth]", "auth/forgot-password", "auth/reset-password", "approve/[token]",
-    "review/[token]", "portal/[token]/request", "stripe/webhook", "waitlist", "waitlist/stats",
+    "review/[token]", "portal/[token]/request", "portal/[token]/reports/[id]", "stripe/webhook", "waitlist", "waitlist/stats",
     "internal/reset-demo", "invite/accept",
   ]);
   const targets = ["app/actions.ts", ...files("app/(workspace)").filter(file => file.endsWith("page.tsx")),

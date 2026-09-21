@@ -1,6 +1,9 @@
 import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
-import { sendWeeklyReportEmail } from "@/app/actions";
+import { publishWeeklyReport, sendWeeklyReportEmail } from "@/app/actions";
+import { reportDigest } from "@/lib/report-publication";
+import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
@@ -11,12 +14,26 @@ export default async function WeeklyReportDetailPage({ params }: { params: Promi
   const { id } = await params;
   const report = await prisma.weeklyReport.findUniqueOrThrow({
     where: { id },
-    include: { job: { include: { clientProfile: true } } }
+    include: { job: { include: { clientProfile: true } }, publications: { orderBy: { revision: "desc" }, take: 1 } }
   });
+  if (report.job.organizationId !== DEFAULT_ORG_ID) notFound();
+  const publication = report.publications[0];
+  const digest = reportDigest(report);
+  const hasUnpublishedChanges = publication?.sourceDigest !== digest;
 
   return (
     <>
       <PageHeader title={`Week ending ${dateShort(report.weekEnding)}`} body={report.job.jobName} />
+      <Panel className="mb-5 p-4">
+        <p className="font-semibold">{!publication ? "Draft: only visible to Flipside staff" : hasUnpublishedChanges ? "Draft changes await review" : `Published revision ${publication.revision}`}</p>
+        <p className="mt-1 text-sm text-muted-foreground">Review the report below before publishing. Internal notes and unreviewed photos stay private. {publication && "Clients continue to see the last published revision until you publish a new one."}</p>
+        {hasUnpublishedChanges && (
+          <form action={publishWeeklyReport.bind(null, report.id, digest)} className="mt-3">
+            <button type="submit" className="rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground">Approve and publish current draft</button>
+          </form>
+        )}
+        <Link href={`/weekly-reports/${report.id}/edit`} className="mt-3 inline-block text-sm font-semibold text-primary">Edit draft</Link>
+      </Panel>
       <div className="mb-4 flex items-center gap-3">
         <Link href="/weekly-reports" className="text-sm font-semibold text-muted-foreground hover:text-foreground">← All reports</Link>
         <span className="text-muted-foreground">·</span>
@@ -98,7 +115,7 @@ export default async function WeeklyReportDetailPage({ params }: { params: Promi
             <p className="mt-1 text-sm">{report.photos.length > 0 ? `${report.photos.length} attached` : "None"}</p>
             {report.sentAt && (
               <>
-                <p className="mt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Sent to client</p>
+                <p className="mt-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Last recorded send</p>
                 <p className="mt-1 text-sm">{dateShort(report.sentAt)}</p>
               </>
             )}
@@ -112,11 +129,11 @@ export default async function WeeklyReportDetailPage({ params }: { params: Promi
             >
               ↓ Download PDF
             </a>
-            {report.job.clientProfile?.email && (
+            {report.job.clientProfile?.email && publication && (
               <>
                 <form action={sendWeeklyReportEmail.bind(null, report.id)} className="mt-2">
                   <button type="submit" className="w-full rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-center text-sm font-semibold text-primary hover:bg-primary/10">
-                    ✉ Send report to client
+                    ✉ Send published report to client
                   </button>
                 </form>
                 {report.sentAt && (

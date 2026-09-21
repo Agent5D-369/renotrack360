@@ -14,7 +14,7 @@ export default async function ClientPortalPage({
 }) {
   const { token } = await params;
 
-  const job = await prisma.job.findUnique({
+  const record = await prisma.job.findUnique({
     where: { portalToken: token },
     include: {
       clientProfile: true,
@@ -37,8 +37,10 @@ export default async function ClientPortalPage({
         orderBy: { updatedAt: "desc" },
       },
       weeklyReports: {
+        where: { publications: { some: {} } },
         orderBy: { weekEnding: "desc" },
         take: 8,
+        select: { publications: { orderBy: { revision: "desc" }, take: 1 } },
       },
       invoices: {
         where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } },
@@ -57,7 +59,8 @@ export default async function ClientPortalPage({
     },
   });
 
-  if (!job) notFound();
+  if (!record) notFound();
+  const job = { ...record, weeklyReports: record.weeklyReports.flatMap(report => report.publications) };
 
   // Fetch active approval tokens for each sent change order
   const coApprovals = job.changeOrders.length
@@ -439,7 +442,7 @@ export default async function ClientPortalPage({
                         </div>
                       )}
                       <a
-                        href={`/api/pdf/weekly-report/${report.id}`}
+                        href={`/api/portal/${token}/reports/${report.id}`}
                         download
                         className="mt-3 inline-block text-xs font-semibold text-[#183d29] hover:underline"
                       >
@@ -490,7 +493,7 @@ export default async function ClientPortalPage({
                         </div>
                       )}
                       <a
-                        href={`/api/pdf/weekly-report/${report.id}`}
+                        href={`/api/portal/${token}/reports/${report.id}`}
                         download
                         className="mt-3 inline-block text-xs font-semibold text-[#183d29] hover:underline"
                       >

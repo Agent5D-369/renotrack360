@@ -849,6 +849,8 @@ export async function createWeeklyReport(formData: FormData) {
   await requireStaff();
   let parsed: ReturnType<typeof weeklyReportSchema.parse>;
   try { parsed = weeklyReportSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/weekly-reports/new"); }
+  const { assertEntityOwnership } = await import("@/lib/private-media");
+  await assertEntityOwnership(prisma, "JOB", parsed.jobId, DEFAULT_ORG_ID);
   await prisma.weeklyReport.create({ data: parsed });
   revalidatePath("/weekly-reports");
   redirect("/weekly-reports?flash=Report+saved");
@@ -857,6 +859,10 @@ export async function createWeeklyReport(formData: FormData) {
 export async function updateWeeklyReport(reportId: string, formData: FormData) {
   await requireStaff();
   const parsed = weeklyReportSchema.parse(nullable(data(formData)));
+  const { assertEntityOwnership } = await import("@/lib/private-media");
+  await assertEntityOwnership(prisma, "WEEKLY_REPORT", reportId, DEFAULT_ORG_ID);
+  const existing = await prisma.weeklyReport.findUniqueOrThrow({ where: { id: reportId } });
+  if (parsed.jobId !== existing.jobId) throw new Error("A report cannot be moved to another project.");
   await prisma.weeklyReport.update({
     where: { id: reportId },
     data: parsed
@@ -864,6 +870,20 @@ export async function updateWeeklyReport(reportId: string, formData: FormData) {
   revalidatePath("/weekly-reports");
   revalidatePath(`/weekly-reports/${reportId}`);
   redirect(`/weekly-reports/${reportId}?flash=Changes+saved`);
+}
+
+export async function publishWeeklyReport(reportId: string, reviewedDigest: string) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { publishReport, ReportPublicationError } = await import("@/lib/report-publication");
+  try { await publishReport(prisma, actor.id, reportId, reviewedDigest); }
+  catch (error) {
+    if (error instanceof ReportPublicationError) redirect(`/weekly-reports/${reportId}?error=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
+  revalidatePath(`/weekly-reports/${reportId}`);
+  revalidatePath("/portal", "layout");
+  redirect(`/weekly-reports/${reportId}?flash=Reviewed+report+published`);
 }
 
 export async function createChangeOrder(formData: FormData) {
@@ -1281,13 +1301,16 @@ export async function markJobDepositReceived(jobId: string) {
 export async function sendWeeklyReportEmail(reportId: string) {
   await requireStaff();
   const { sendEmail } = await import("@/lib/email-sender");
-  const { buildMailtoLink } = await import("@/lib/email");
   const { dateShort } = await import("@/lib/format");
 
   const report = await prisma.weeklyReport.findUniqueOrThrow({
     where: { id: reportId },
-    include: { job: { include: { clientProfile: true, organization: true } } },
+    include: { job: { include: { clientProfile: true, organization: true } }, publications: { orderBy: { revision: "desc" }, take: 1 } },
   });
+
+  if (report.job.organizationId !== DEFAULT_ORG_ID) throw new Error("Report not found.");
+  const publication = report.publications[0];
+  if (!publication) throw new Error("Review and publish this report before sending it.");
 
   const client = report.job.clientProfile;
   if (!client?.email) {
@@ -1296,8 +1319,9 @@ export async function sendWeeklyReportEmail(reportId: string) {
   }
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://renotrack360.com";
-  const subject = `Weekly update - ${report.job.jobName} - week ending ${dateShort(report.weekEnding)}`;
-  const body = `Hi ${client.profileName},\n\nHere is your project update for the week ending ${dateShort(report.weekEnding)}.\n\n${report.clientSummary ?? report.workCompleted}${report.decisionsNeeded ? `\n\nDecisions needed:\n${report.decisionsNeeded}` : ""}${report.nextWeekPlan ? `\n\nNext week:\n${report.nextWeekPlan}` : ""}\n\nDownload the full report: ${appUrl}/api/pdf/weekly-report/${reportId}\n\nBest regards\n${report.job.organization.name}`;
+  const subject = `Weekly update - ${report.job.jobName} - week ending ${dateShort(publication.weekEnding)}`;
+  const portalLink = report.job.portalToken ? `\n\nYour project portal: ${appUrl}/portal/${report.job.portalToken}` : "";
+  const body = `Hi ${client.profileName},\n\nHere is your project update for the week ending ${dateShort(publication.weekEnding)}.\n\n${publication.clientSummary ?? publication.workCompleted}${publication.decisionsNeeded ? `\n\nDecisions needed:\n${publication.decisionsNeeded}` : ""}${publication.nextWeekPlan ? `\n\nNext week:\n${publication.nextWeekPlan}` : ""}${portalLink}\n\nBest regards\n${report.job.organization.name}`;
 
   const smtpOrg = await prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { smtpFromName: true, smtpFromEmail: true, smtpPassword: true } });
   const smtpConfig = smtpOrg?.smtpFromEmail && smtpOrg?.smtpPassword ? { fromName: smtpOrg.smtpFromName ?? smtpOrg.smtpFromEmail, fromEmail: smtpOrg.smtpFromEmail, password: smtpOrg.smtpPassword } : null;

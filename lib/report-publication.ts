@@ -1,0 +1,48 @@
+import { createHash } from "node:crypto";
+import type { PrismaClient, WeeklyReport } from "@prisma/client";
+import { hasStaffAccess } from "./staff-policy";
+import { DEFAULT_ORG_ID } from "./constants";
+
+export class ReportPublicationError extends Error {}
+export async function publishedReportForToken(db: PrismaClient, id: string, token: string) {
+  if (!token || token.length > 256) return null;
+  return db.weeklyReportPublication.findFirst({ where: { id, report: {
+    job: { portalToken: token, organizationId: DEFAULT_ORG_ID },
+  } }, include: { report: { select: { job: { include: { clientProfile: true, property: true, organization: true } } } } } });
+}
+export function publicReportFields(report: Pick<WeeklyReport, "weekEnding" | "workCompleted" | "issuesFound" | "decisionsNeeded" | "budgetNotes" | "scheduleNotes" | "nextWeekPlan" | "clientSummary">) {
+  return { weekEnding: report.weekEnding, workCompleted: report.workCompleted,
+    issuesFound: report.issuesFound, decisionsNeeded: report.decisionsNeeded,
+    budgetNotes: report.budgetNotes, scheduleNotes: report.scheduleNotes,
+    nextWeekPlan: report.nextWeekPlan, clientSummary: report.clientSummary };
+}
+export function reportDigest(report: Parameters<typeof publicReportFields>[0]) {
+  return createHash("sha256").update(JSON.stringify(publicReportFields(report))).digest("hex");
+}
+
+export async function publishReport(db: PrismaClient, actorId: string, reportId: string, reviewedDigest: string) {
+  return db.$transaction(async tx => {
+    const user = await tx.user.findUnique({ where: { id: actorId }, include: { memberships: true } });
+    const member = user?.memberships.find(value => value.organizationId === user.organizationId);
+    if (!hasStaffAccess(user, member ?? null)) throw new ReportPublicationError("Staff access denied.");
+    // Serialize publication and ordinary draft updates on the same report row.
+    await tx.$queryRaw`SELECT id FROM "WeeklyReport" WHERE id = ${reportId} FOR UPDATE`;
+    const report = await tx.weeklyReport.findUnique({ where: { id: reportId }, include: {
+      job: { select: { organizationId: true } }, publications: { orderBy: { revision: "desc" }, take: 1 },
+    } });
+    if (!report || report.job.organizationId !== user!.organizationId) throw new ReportPublicationError("Report not found.");
+    const digest = reportDigest(report);
+    if (reviewedDigest !== digest) throw new ReportPublicationError("This draft changed after you opened it. Review the current report before publishing.");
+    if (!report.workCompleted.trim()) throw new ReportPublicationError("Describe completed work before publishing.");
+    const latest = report.publications[0];
+    if (latest?.sourceDigest === digest) return latest;
+    const publication = await tx.weeklyReportPublication.create({ data: {
+      ...publicReportFields(report), reportId, sourceDigest: digest, reviewedById: actorId,
+      revision: (latest?.revision ?? 0) + 1,
+    } });
+    await tx.auditEvent.create({ data: { organizationId: user!.organizationId, actorUserId: actorId,
+      action: "WEEKLY_REPORT_PUBLISHED", entityType: "WeeklyReport", entityId: reportId,
+      metadata: { publicationId: publication.id, revision: publication.revision, sourceDigest: digest } } });
+    return publication;
+  });
+}
