@@ -27,7 +27,7 @@ async function withDb(url, fn) {
 try {
   mkdirSync(`${directory}/migrations`, { recursive: true });
   cpSync('prisma/schema.prisma', `${directory}/schema.prisma`);
-  for (const entry of readdirSync('prisma/migrations')) if (entry !== bridge) {
+  for (const entry of readdirSync('prisma/migrations')) if (entry === 'migration_lock.toml' || entry < bridge) {
     cpSync(`prisma/migrations/${entry}`, `${directory}/migrations/${entry}`, { recursive: true });
   }
   docker(['run', '-d', '--name', container, '--label', 'flipside.disposable=migration-test',
@@ -77,6 +77,8 @@ try {
       input: readFileSync(resolve(process.env.PRESERVATION_DIRECTORY, 'database.dump')),
     });
     await verify(restored, process.env.PRESERVATION_DIRECTORY);
+    const ledger = await withDb(restored, db => db.$queryRawUnsafe(`SELECT to_regclass('public._prisma_migrations')::text AS name`));
+    if (ledger[0].name) prisma(['migrate', 'deploy'], restored);
     await baselineExisting(restored);
     await baselineExisting(restored);
     prisma(['migrate', 'deploy'], restored);
@@ -97,5 +99,5 @@ try {
   console.error(error.code || error.message.replace(/postgres(?:ql)?:\/\/\S+/g, '[redacted]'));
   process.exitCode = 1;
 } finally {
-  if (started) docker(['rm', '-f', container]);
+  if (started) docker(['rm', '-f', '-v', container]);
 }

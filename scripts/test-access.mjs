@@ -4,7 +4,10 @@ import { setTimeout } from 'node:timers/promises';
 import { postgresImage } from './preservation.mjs';
 import { prisma } from './baseline-existing.mjs';
 
-const name = 'flipside-access-test-' + randomBytes(6).toString('hex');
+const suite = process.argv[2] || 'access';
+if (!['access', 'media'].includes(suite)) throw new Error('Unknown disposable test suite.');
+const database = 'flipside_migration_' + suite;
+const name = `flipside-${suite}-test-` + randomBytes(6).toString('hex');
 const password = randomBytes(24).toString('hex');
 let started = false;
 function docker(args, options = {}) {
@@ -15,7 +18,7 @@ function docker(args, options = {}) {
 try {
   docker(['run', '-d', '--name', name, '--label', 'flipside.disposable=access-test',
     '-p', '127.0.0.1::5432', '--env', 'POSTGRES_PASSWORD', '--env', 'POSTGRES_DB', postgresImage], {
-    env: { ...process.env, POSTGRES_PASSWORD: password, POSTGRES_DB: 'flipside_migration_access' },
+    env: { ...process.env, POSTGRES_PASSWORD: password, POSTGRES_DB: database },
   });
   started = true;
   for (let i = 0; i < 40; i++) {
@@ -24,9 +27,9 @@ try {
     await setTimeout(500);
   }
   const port = docker(['port', name, '5432']).split(':').pop();
-  const url = `postgresql://postgres:${password}@127.0.0.1:${port}/flipside_migration_access`;
+  const url = `postgresql://postgres:${password}@127.0.0.1:${port}/${database}`;
   prisma(['migrate', 'deploy'], url);
-  const result = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', '--test', 'scripts/access.test.ts'], {
+  const result = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', '--test', `scripts/${suite}.test.ts`], {
     stdio: 'inherit', env: { ...process.env, NODE_ENV: 'test', DATABASE_URL: url },
   });
   process.exitCode = result.status ?? 1;
@@ -34,5 +37,5 @@ try {
   console.error(error.code || error.message.replace(/postgres(?:ql)?:\/\/\S+/g, '[redacted]'));
   process.exitCode = 1;
 } finally {
-  if (started) docker(['rm', '-f', name]);
+  if (started) docker(['rm', '-f', '-v', name]);
 }

@@ -535,6 +535,8 @@ model Organization {
   voiceNotes         VoiceNote[]
   jobs               Job[]
   inviteTokens       InviteToken[]
+  fileAssets         FileAsset[]
+  auditEvents        AuditEvent[]
   smtpFromName    String?
   smtpFromEmail   String?
   smtpPassword    String?   // Gmail App Password (16-char code, not the real password)
@@ -1797,8 +1799,29 @@ model FileAsset {
   size            Int
   url             String
   storageProvider String         @default("local")
+  organizationId  String?
+  organization    Organization?  @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  storageKey      String?        @unique
+  sha256          String?
+  uploadedByUserId String?
   notes           String?
   createdAt       DateTime       @default(now())
+
+  @@index([organizationId, entityType, entityId])
+}
+
+model AuditEvent {
+  id              String       @id @default(cuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  actorUserId     String?
+  action          String
+  entityType      String
+  entityId        String
+  metadata        Json?
+  createdAt       DateTime     @default(now())
+
+  @@index([organizationId, entityType, entityId, createdAt])
 }
 
 model VoiceNote {

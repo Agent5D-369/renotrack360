@@ -1120,10 +1120,11 @@ export async function logActualCost(formData: FormData) {
 
 export async function createFieldReport(formData: FormData) {
   await requireStaff();
-  const { writeFile, mkdir } = await import("node:fs/promises");
-  const nodePath = await import("node:path");
+  const { assertEntityOwnership, MediaError } = await import("@/lib/private-media");
+  const { storeFile } = await import("@/lib/storage");
 
   const jobId = String(formData.get("jobId") || "");
+  await assertEntityOwnership(prisma, "JOB", jobId, DEFAULT_ORG_ID);
   const crewSummary = String(formData.get("crewSummary") || "");
   const workCompleted = String(formData.get("workCompleted") || "");
   const blockers = String(formData.get("blockers") || "") || null;
@@ -1133,18 +1134,18 @@ export async function createFieldReport(formData: FormData) {
   const clientVisible = formData.get("clientVisible") === "true";
   const reportDateRaw = String(formData.get("reportDate") || "");
   const reportDate = reportDateRaw ? new Date(reportDateRaw) : new Date();
+  if (!crewSummary.trim() || !workCompleted.trim() || Number.isNaN(reportDate.getTime())) {
+    throw new MediaError("Crew, completed work and a valid report date are required.");
+  }
 
-  // Handle photo uploads - store to public/uploads so Next.js serves them as static files
+  // Project photos stay private and durable; public sharing requires a separate publication flow.
   const photoFiles = formData.getAll("photos") as File[];
   const photoUrls: string[] = [];
   for (const file of photoFiles) {
-    if (!file || file.size === 0) continue;
-    const folder = nodePath.join(process.cwd(), "public", "uploads", "field-reports", jobId);
-    await mkdir(folder, { recursive: true });
-    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-    const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}-${safeName}`;
-    await writeFile(nodePath.join(folder, fileName), Buffer.from(await file.arrayBuffer()));
-    photoUrls.push(`/uploads/field-reports/${jobId}/${fileName}`);
+    if (!(file instanceof File) || file.size === 0) continue;
+    if (!file.type.startsWith("image/")) throw new MediaError("Field report photos must be JPG, PNG or WebP images.");
+    const asset = await storeFile({ entityType: "JOB", entityId: jobId, file, notes: "Field report photo" });
+    photoUrls.push(asset.url);
   }
 
   const report = await prisma.fieldReport.create({

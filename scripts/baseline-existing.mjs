@@ -21,14 +21,17 @@ export async function baselineExisting(url) {
     '--to-schema-datamodel', 'prisma/schema.prisma', '--exit-code'], url);
   const names = readdirSync('prisma/migrations', { withFileTypes: true })
     .filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
-  const checksums = Object.fromEntries(names.map(name => [name,
-    createHash('sha256').update(readFileSync(`prisma/migrations/${name}/migration.sql`)).digest('hex')]));
+  const checksums = Object.fromEntries(names.map(name => {
+    const content = readFileSync(`prisma/migrations/${name}/migration.sql`, 'utf8');
+    const lf = content.replaceAll('\r\n', '\n');
+    return [name, new Set([content, lf, lf.replaceAll('\n', '\r\n')].map(value => createHash('sha256').update(value).digest('hex')))];
+  }));
   const db = new PrismaClient({ datasources: { db: { url } }, log: [] });
   try {
     const [table] = await db.$queryRawUnsafe(`SELECT to_regclass('public._prisma_migrations')::text AS name`);
     const rows = table.name ? await db.$queryRawUnsafe('SELECT migration_name, checksum, finished_at, rolled_back_at FROM "_prisma_migrations"') : [];
     for (const row of rows) {
-      if (checksums[row.migration_name] !== row.checksum || !row.finished_at || row.rolled_back_at) {
+      if (!checksums[row.migration_name]?.has(row.checksum) || !row.finished_at || row.rolled_back_at) {
         throw new Error('Existing migration ledger is not a clean subset of this exact history. Review required.');
       }
     }
