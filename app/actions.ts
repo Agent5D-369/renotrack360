@@ -897,10 +897,11 @@ export async function createPriceScenario(formData: FormData) {
     });
     id = snapshot.id;
   } catch (error) {
-    if (error instanceof PricingError) redirect(`/cost-intelligence?error=${encodeURIComponent(error.message)}`);
+    if (error instanceof PricingError) redirect(`/cost-intelligence/scenarios?error=${encodeURIComponent(error.message)}`);
     throw error;
   }
   revalidatePath("/cost-intelligence");
+  revalidatePath("/cost-intelligence/scenarios");
   redirect(`/cost-intelligence/${id}`);
 }
 

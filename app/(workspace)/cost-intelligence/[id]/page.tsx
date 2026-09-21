@@ -16,7 +16,7 @@ export default async function PriceScenarioPage({ params }: { params: Promise<{ 
   const usd = (value: unknown) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value));
   return <>
     <PageHeader title={snapshot.name} body="Saved internal pricing scenario. No estimate or contract was changed." />
-    <Link href="/cost-intelligence" className="mb-5 inline-block text-sm font-semibold text-primary">← All scenarios and new calculation</Link>
+    <Link href="/cost-intelligence/scenarios" className="mb-5 inline-block text-sm font-semibold text-primary">← All scenarios and new calculation</Link>
     <div className="grid gap-5 lg:grid-cols-2">
       <Panel className="p-5">
         <h2 className="font-semibold">Pricing result</h2>

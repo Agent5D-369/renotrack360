@@ -16,7 +16,9 @@ async function main() {
       memberships: { create: { organizationId: "flipside-org", role: "OWNER", status: "ACTIVE" } } } });
     const cookie = "next-auth.session-token=" + await encode({ secret: process.env.NEXTAUTH_SECRET!, token: { id: owner.id, sub: owner.id, email: owner.email } });
     const http = (route: string, options: RequestInit = {}) => fetch(origin + route, { ...options, redirect: "manual", headers: { ...options.headers, cookie } });
-    const response = await http("/cost-intelligence"); assert.equal(response.status, 200);
+    const dashboard = await http("/cost-intelligence").then(response => response.text());
+    for (const section of ["Assemblies", "Recent actual costs", "Recent vendor quotes"]) assert.ok(dashboard.includes(section), `Preserve ${section}`);
+    const response = await http("/cost-intelligence/scenarios"); assert.equal(response.status, 200);
     const html = await response.text();
     const form = html.match(/<form\b[\s\S]*?<\/form>/g)?.find(value => value.includes('name="requestId"'));
     assert.ok(form, "Pricing form must be present.");
@@ -29,7 +31,7 @@ async function main() {
       equipment: "0", protectionCleanup: "0", permitsDesign: "0", otherDirect: "0", riskPercent: "0", targetMarginPercent: "40", ownerExceptionReason: "" });
     const post = () => {
       const data = new FormData(); for (const [key, value] of body) data.set(key, value);
-      return http("/cost-intelligence", { method: "POST", body: data, headers: { origin } });
+      return http("/cost-intelligence/scenarios", { method: "POST", body: data, headers: { origin } });
     };
     const saved = await post();
     assert.equal(saved.status, 303);
