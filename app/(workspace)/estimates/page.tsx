@@ -4,11 +4,13 @@ import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { estimateInOrganization, leadInOrganization } from "@/lib/company-scope";
 
 export default async function EstimatesPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const estimates = await prisma.estimate.findMany({
-    include: { clientProfile: true, property: true, followUps: { orderBy: { dueDate: "asc" } } },
+    where: estimateInOrganization(actor.organizationId),
+    include: { clientProfile: true, property: true, followUps: { where: { OR: [{ relatedLeadId: null }, { lead: leadInOrganization(actor.organizationId) }] }, orderBy: { dueDate: "asc" } } },
     orderBy: { updatedAt: "desc" }
   });
 

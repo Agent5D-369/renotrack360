@@ -1,18 +1,14 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 
 const MAX_BYTES = 3 * 1024 * 1024; // 3 MB
 
 export async function POST(request: Request) {
   const denied = await staffApiDenial();
   if (denied) return denied;
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const actor = await requireStaff();
 
   const formData = await request.formData();
   const file = formData.get("logo");
@@ -28,7 +24,7 @@ export async function POST(request: Request) {
 
   if (!process.env.CLOUDINARY_URL) {
     return NextResponse.json(
-      { error: "File storage is not configured. Set CLOUDINARY_URL in Railway environment variables to enable logo uploads." },
+      { error: "Logo uploads are unavailable. You can use a public logo URL in company settings." },
       { status: 503 }
     );
   }
@@ -39,7 +35,7 @@ export async function POST(request: Request) {
   const result = await new Promise<{ secure_url: string }>((resolve, reject) => {
     cloudinary.uploader.upload_stream(
       {
-        folder: "renotrack360/logos",
+        folder: `renotrack360/logos/${actor.organizationId}`,
         resource_type: "image",
         transformation: [{ width: 800, crop: "limit" }] // cap upload resolution
       },
@@ -48,7 +44,7 @@ export async function POST(request: Request) {
   });
 
   await prisma.organization.update({
-    where: { id: DEFAULT_ORG_ID },
+    where: { id: actor.organizationId },
     data: { logoUrl: result.secure_url }
   });
 
@@ -58,11 +54,10 @@ export async function POST(request: Request) {
 export async function DELETE() {
   const denied = await staffApiDenial();
   if (denied) return denied;
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const actor = await requireStaff();
 
   await prisma.organization.update({
-    where: { id: DEFAULT_ORG_ID },
+    where: { id: actor.organizationId },
     data: { logoUrl: null }
   });
   return NextResponse.json({ ok: true });

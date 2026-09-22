@@ -4,16 +4,19 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { leadInOrganization, profileInOrganization, propertyInOrganization, userInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditLeadPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [lead, profiles, properties, users] = await Promise.all([
-    prisma.lead.findUniqueOrThrow({ where: { id } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
-    prisma.property.findMany({ select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
-    prisma.user.findMany({ select: { id: true, name: true, email: true }, orderBy: { email: "asc" } })
+    prisma.lead.findFirst({ where: leadInOrganization(actor.organizationId, { id }) }),
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+    prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
+    prisma.user.findMany({ where: userInOrganization(actor.organizationId), select: { id: true, name: true, email: true }, orderBy: { email: "asc" } })
   ]);
+  if (!lead) notFound();
 
   return (
     <>

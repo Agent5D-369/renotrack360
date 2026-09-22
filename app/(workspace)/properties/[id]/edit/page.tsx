@@ -5,14 +5,17 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { profileInOrganization, propertyInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditPropertyPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [property, profiles] = await Promise.all([
-    prisma.property.findUniqueOrThrow({ where: { id } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } })
+    prisma.property.findFirst({ where: propertyInOrganization(actor.organizationId, { id }) }),
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } })
   ]);
+  if (!property) notFound();
   const saveProperty = updateProperty.bind(null, property.id);
   const profileOptions = relationOptions(profiles.map((p) => ({ id: p.id, label: p.profileName })));
 

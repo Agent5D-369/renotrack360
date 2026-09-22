@@ -4,11 +4,14 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { estimateInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditEstimatePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const estimate = await prisma.estimate.findUniqueOrThrow({ where: { id } });
+  const estimate = await prisma.estimate.findFirst({ where: estimateInOrganization(actor.organizationId, { id }) });
+  if (!estimate) notFound();
   const saveEstimate = updateEstimate.bind(null, estimate.id);
 
   return (

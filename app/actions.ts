@@ -8,6 +8,7 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { AiProvider, ClientStatus, ImportStatus, JobStatus, ProfileKind, ProfileType, RiskLevel, VendorOnboardingStatus, W9Status } from "@prisma/client";
 import { ZodError } from "zod";
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_ORG_ID, renovationPhaseDetails, renovationPhases } from "@/lib/constants";
 import {
@@ -35,6 +36,7 @@ import { allowanceItems, categoryForPhase, exteriorChecks, fieldStandardChecks, 
 import { createStripePaymentLink } from "@/lib/stripe";
 import { reportGuideCorrectionSchema } from "@/lib/report-guide-brain";
 import { ReportGuideError, reviewGuideTask } from "@/lib/report-guide";
+import { assertActivityCompanyRelations, assertCompanyRelations, CompanyRelationError } from "@/lib/company-relations";
 
 function data(formData: FormData) {
   return Object.fromEntries(formData.entries());
@@ -56,29 +58,34 @@ function nullable<T extends Record<string, unknown>>(value: T) {
   ) as T;
 }
 
+async function assertOwnedFileAsset(tx: Prisma.TransactionClient, organizationId: string, assetId: string | null | undefined) {
+  if (!assetId) return;
+  if (await tx.fileAsset.count({ where: { id: assetId, organizationId } }) !== 1) throw new CompanyRelationError();
+}
+
 export async function createProfile(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   let parsed: ReturnType<typeof profileSchema.parse>;
   try { parsed = profileSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/profiles/new"); }
-  const serviceTagIds = formArray(formData, "serviceTagIds");
+  const serviceTagIds = [...new Set(formArray(formData, "serviceTagIds"))];
   const dedupeKey = [
     parsed.profileName.toLowerCase().trim(),
     parsed.email?.toLowerCase().trim() || "",
     parsed.phone?.replace(/\D/g, "") || ""
   ].join("|");
-  const existing = await prisma.profile.findFirst({
-    where: {
-      organizationId: DEFAULT_ORG_ID,
-      OR: [
-        parsed.email ? { email: parsed.email.toLowerCase() } : undefined,
-        parsed.phone ? { phone: parsed.phone } : undefined,
-        { dedupeKey }
-      ].filter(Boolean) as Prisma.ProfileWhereInput[]
-    }
-  });
-  if (existing) redirect(`/profiles/${existing.id}`);
-  await prisma.profile.create({
-    data: {
+  const result = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      profiles: [parsed.companyProfileId], serviceTags: serviceTagIds,
+    });
+    await assertOwnedFileAsset(tx, actor.organizationId, parsed.w9FileAssetId);
+    const existing = await tx.profile.findFirst({ where: {
+      organizationId: actor.organizationId,
+      OR: [parsed.email ? { email: parsed.email.toLowerCase() } : undefined,
+        parsed.phone ? { phone: parsed.phone } : undefined, { dedupeKey }]
+        .filter(Boolean) as Prisma.ProfileWhereInput[],
+    } });
+    if (existing) return { existingId: existing.id };
+    const profile = await tx.profile.create({ data: {
       ...parsed,
       email: parsed.email?.toLowerCase() || null,
       profileKind: parsed.profileKind as ProfileKind,
@@ -86,34 +93,53 @@ export async function createProfile(formData: FormData) {
       clientStatus: parsed.clientStatus as ClientStatus,
       w9Status: parsed.w9Status as W9Status,
       vendorOnboardingStatus: parsed.vendorOnboardingStatus as VendorOnboardingStatus,
-      organizationId: DEFAULT_ORG_ID,
+      organizationId: actor.organizationId,
       dedupeKey,
-      serviceTags: { create: serviceTagIds.map((serviceTagId) => ({ serviceTagId })) }
-    }
+      serviceTags: { create: serviceTagIds.map((serviceTagId) => ({ serviceTagId })) },
+    } });
+    return { profileId: profile.id };
   });
+  if ("existingId" in result) redirect(`/profiles/${result.existingId}`);
   revalidatePath("/profiles");
   redirect("/profiles?flash=Contact+created");
 }
 
 export async function updateProfile(profileId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = profileSchema.parse(nullable(data(formData)));
-  const serviceTagIds = formArray(formData, "serviceTagIds");
-  await prisma.profile.update({
-    where: { id: profileId },
-    data: {
-      ...parsed,
-      email: parsed.email?.toLowerCase() || null,
-      profileKind: parsed.profileKind as ProfileKind,
-      profileType: parsed.profileType as ProfileType,
-      clientStatus: parsed.clientStatus as ClientStatus,
-      w9Status: parsed.w9Status as W9Status,
-      vendorOnboardingStatus: parsed.vendorOnboardingStatus as VendorOnboardingStatus,
-      serviceTags: {
-        deleteMany: {},
-        create: serviceTagIds.map((serviceTagId) => ({ serviceTagId }))
+  const serviceTagIds = [...new Set(formArray(formData, "serviceTagIds"))];
+  if (parsed.companyProfileId === profileId) throw new CompanyRelationError();
+  const dedupeKey = [parsed.profileName.toLowerCase().trim(), parsed.email?.toLowerCase().trim() || "",
+    parsed.phone?.replace(/\D/g, "") || ""].join("|");
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      profiles: [profileId, parsed.companyProfileId], serviceTags: serviceTagIds,
+    });
+    await assertOwnedFileAsset(tx, actor.organizationId, parsed.w9FileAssetId);
+    const duplicate = await tx.profile.findFirst({ where: {
+      organizationId: actor.organizationId, id: { not: profileId },
+      OR: [parsed.email ? { email: parsed.email.toLowerCase() } : undefined,
+        parsed.phone ? { phone: parsed.phone } : undefined, { dedupeKey }]
+        .filter(Boolean) as Prisma.ProfileWhereInput[],
+    }, select: { id: true } });
+    if (duplicate) throw new Error("A matching contact already exists.");
+    await tx.profile.update({
+      where: { id: profileId },
+      data: {
+        ...parsed,
+        email: parsed.email?.toLowerCase() || null,
+        profileKind: parsed.profileKind as ProfileKind,
+        profileType: parsed.profileType as ProfileType,
+        clientStatus: parsed.clientStatus as ClientStatus,
+        w9Status: parsed.w9Status as W9Status,
+        vendorOnboardingStatus: parsed.vendorOnboardingStatus as VendorOnboardingStatus,
+        dedupeKey,
+        serviceTags: {
+          deleteMany: {},
+          create: serviceTagIds.map((serviceTagId) => ({ serviceTagId }))
+        }
       }
-    }
+    });
   });
   revalidatePath("/profiles");
   revalidatePath(`/profiles/${profileId}`);
@@ -121,16 +147,17 @@ export async function updateProfile(profileId: string, formData: FormData) {
 }
 
 export async function createLead(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const returnTo = String(formData.get("returnTo") || "");
   let parsed: ReturnType<typeof leadSchema.parse>;
   try { parsed = leadSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/leads/new"); }
-  await prisma.lead.create({
-    data: {
-      ...parsed,
-      status: parsed.status as Prisma.LeadCreateInput["status"],
-      organizationId: DEFAULT_ORG_ID
-    }
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      users: [parsed.ownerUserId], profiles: [parsed.relatedProfileId], properties: [parsed.relatedPropertyId],
+    });
+    await tx.lead.create({ data: {
+      ...parsed, status: parsed.status as Prisma.LeadCreateInput["status"], organizationId: actor.organizationId,
+    } });
   });
   revalidatePath("/leads");
   if (returnTo?.startsWith("/guided/")) redirect(returnTo);
@@ -138,14 +165,15 @@ export async function createLead(formData: FormData) {
 }
 
 export async function updateLead(leadId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = leadSchema.parse(nullable(data(formData)));
-  await prisma.lead.update({
-    where: { id: leadId },
-    data: {
-      ...parsed,
-      status: parsed.status as Prisma.LeadUpdateInput["status"]
-    }
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      leads: [leadId], users: [parsed.ownerUserId], profiles: [parsed.relatedProfileId], properties: [parsed.relatedPropertyId],
+    });
+    await tx.lead.update({ where: { id: leadId }, data: {
+      ...parsed, status: parsed.status as Prisma.LeadUpdateInput["status"],
+    } });
   });
   revalidatePath("/leads");
   revalidatePath(`/leads/${leadId}`);
@@ -153,16 +181,16 @@ export async function updateLead(leadId: string, formData: FormData) {
 }
 
 export async function createProperty(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const returnTo = String(formData.get("returnTo") || "");
   const parsed = propertySchema.parse(nullable(data(formData)));
-  await prisma.property.create({
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: {
-      ...parsed,
-      propertyType: parsed.propertyType as Prisma.PropertyCreateInput["propertyType"],
-      organizationId: DEFAULT_ORG_ID
-    } as any
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { profiles: [parsed.agentProfileId, parsed.investorProfileId] });
+    await tx.property.create({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: { ...parsed, propertyType: parsed.propertyType as Prisma.PropertyCreateInput["propertyType"],
+        organizationId: actor.organizationId } as any,
+    });
   });
   revalidatePath("/properties");
   if (returnTo?.startsWith("/guided/")) redirect(returnTo);
@@ -170,16 +198,17 @@ export async function createProperty(formData: FormData) {
 }
 
 export async function createQuote(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = quoteSchema.parse(nullable(data(formData)));
-  await prisma.quote.create({
-    data: {
-      ...parsed,
-      quoteStatus: parsed.quoteStatus as Prisma.QuoteCreateInput["quoteStatus"],
-      riskLevel: parsed.riskLevel as Prisma.QuoteCreateInput["riskLevel"],
-      tradesNeeded: [],
-      organizationId: DEFAULT_ORG_ID
-    }
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      profiles: [parsed.clientProfileId], properties: [parsed.propertyId], leads: [parsed.leadId],
+    });
+    await tx.quote.create({ data: {
+      ...parsed, quoteStatus: parsed.quoteStatus as Prisma.QuoteCreateInput["quoteStatus"],
+      riskLevel: parsed.riskLevel as Prisma.QuoteCreateInput["riskLevel"], tradesNeeded: [],
+      organizationId: actor.organizationId,
+    } });
   });
   revalidatePath("/quotes");
   redirect("/quotes");
@@ -195,7 +224,7 @@ function numberField(formData: FormData, name: string, fallback = 0) {
 }
 
 export async function createQuoteFromFieldWizard(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const clientProfileId = String(formData.get("clientProfileId") || "") || null;
   const propertyId = String(formData.get("propertyId") || "") || null;
   const leadId = String(formData.get("leadId") || "") || null;
@@ -206,9 +235,13 @@ export async function createQuoteFromFieldWizard(formData: FormData) {
   const ownerProvides = formArray(formData, "ownerProvides");
   const contractorProvides = formArray(formData, "contractorProvides");
 
-  const quote = await prisma.quote.create({
+  const quote = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      profiles: [clientProfileId], properties: [propertyId], leads: [leadId],
+    });
+    const quote = await tx.quote.create({
     data: {
-      organizationId: DEFAULT_ORG_ID,
+      organizationId: actor.organizationId,
       quoteName,
       clientProfileId,
       propertyId,
@@ -233,7 +266,7 @@ export async function createQuoteFromFieldWizard(formData: FormData) {
     }
   });
 
-  const catalog = await prisma.costCatalogItem.findMany({ where: { organizationId: DEFAULT_ORG_ID, active: true } });
+  const catalog = await tx.costCatalogItem.findMany({ where: { organizationId: actor.organizationId, active: true } });
   const catalogByCategory = new Map<string, (typeof catalog)[number]>();
   for (const item of catalog) if (!catalogByCategory.has(item.category)) catalogByCategory.set(item.category, item);
 
@@ -261,7 +294,7 @@ export async function createQuoteFromFieldWizard(formData: FormData) {
       riskFactor: String(formData.get("riskLevel") || catalogItem?.riskFactor || "MEDIUM") as RiskLevel
     });
 
-    await prisma.quoteLineItem.create({
+    await tx.quoteLineItem.create({
       data: {
         quoteId: quote.id,
         scopeArea: category,
@@ -357,7 +390,7 @@ export async function createQuoteFromFieldWizard(formData: FormData) {
     }
   }
 
-  await prisma.activity.create({
+  await tx.activity.create({
     data: {
       relatedProfileId: clientProfileId,
       relatedLeadId: leadId,
@@ -369,59 +402,55 @@ export async function createQuoteFromFieldWizard(formData: FormData) {
     }
   });
 
-  await recalculateQuote(quote.id);
+    await recalculateQuote(tx, actor.organizationId, quote.id);
+    return quote;
+  }, { timeout: 30_000 });
   revalidatePath("/quotes");
   redirect(`/quotes/${quote.id}`);
 }
 
 export async function createQuoteLineItem(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = quoteLineItemSchema.parse(nullable(data(formData)));
   const totals = calculateLineItem({
     ...parsed,
     riskFactor: parsed.riskFactor as RiskLevel
   });
-  await prisma.quoteLineItem.create({
-    data: {
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      quotes: [parsed.quoteId], catalogItems: [parsed.costCatalogItemId],
+    });
+    await tx.quoteLineItem.create({ data: {
       ...parsed,
       riskFactor: parsed.riskFactor as RiskLevel,
       ...totals
-    }
+    } });
+    await recalculateQuote(tx, actor.organizationId, parsed.quoteId);
   });
-  await recalculateQuote(parsed.quoteId);
   revalidatePath(`/quotes/${parsed.quoteId}`);
   redirect(`/quotes/${parsed.quoteId}`);
 }
 
 export async function addCatalogItemToQuote(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const quoteId = String(formData.get("quoteId"));
   const catalogItemId = String(formData.get("catalogItemId"));
   const quantity = Number(formData.get("quantity") ?? 1);
-  const item = await prisma.costCatalogItem.findUniqueOrThrow({ where: { id: catalogItemId } });
-  const target = Number(item.flipsideTargetCost);
-  const low = Number(item.flipsideLowCost);
-  const high = Number(item.flipsideHighCost);
-  const laborLow = low * 0.55;
-  const laborTarget = target * 0.55;
-  const laborHigh = high * 0.55;
-  const materialLow = low * 0.45;
-  const materialTarget = target * 0.45;
-  const materialHigh = high * 0.45;
-  const totals = calculateLineItem({
-    quantity,
-    laborLow,
-    laborTarget,
-    laborHigh,
-    materialLow,
-    materialTarget,
-    materialHigh,
-    subcontractorCost: 0,
-    markupPercent: Number(item.markup),
-    riskFactor: item.riskFactor
-  });
-  await prisma.quoteLineItem.create({
-    data: {
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { quotes: [quoteId], catalogItems: [catalogItemId] });
+    const item = await tx.costCatalogItem.findUniqueOrThrow({ where: { id: catalogItemId } });
+    const target = Number(item.flipsideTargetCost);
+    const low = Number(item.flipsideLowCost);
+    const high = Number(item.flipsideHighCost);
+    const laborLow = low * 0.55;
+    const laborTarget = target * 0.55;
+    const laborHigh = high * 0.55;
+    const materialLow = low * 0.45;
+    const materialTarget = target * 0.45;
+    const materialHigh = high * 0.45;
+    const totals = calculateLineItem({ quantity, laborLow, laborTarget, laborHigh, materialLow,
+      materialTarget, materialHigh, subcontractorCost: 0, markupPercent: Number(item.markup), riskFactor: item.riskFactor });
+    await tx.quoteLineItem.create({ data: {
       quoteId,
       costCatalogItemId: catalogItemId,
       scopeArea: item.category,
@@ -438,9 +467,9 @@ export async function addCatalogItemToQuote(formData: FormData) {
       riskFactor: item.riskFactor,
       clientFacingDescription: `${item.serviceName} based on RenoTech Cost Catalog planning ranges.`,
       ...totals
-    }
+    } });
+    await recalculateQuote(tx, actor.organizationId, quoteId);
   });
-  await recalculateQuote(quoteId);
   revalidatePath(`/quotes/${quoteId}`);
   redirect(`/quotes/${quoteId}`);
 }
@@ -475,7 +504,7 @@ export async function updateCatalog(itemId: string, formData: FormData) {
 }
 
 export async function createActivity(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const subject = String(formData.get("subject") ?? "");
   const activityType = String(formData.get("activityType") ?? "NOTE");
   const body = String(formData.get("body") ?? "") || null;
@@ -484,8 +513,11 @@ export async function createActivity(formData: FormData) {
   const relatedProfileId = String(formData.get("relatedProfileId") ?? "") || null;
   const relatedLeadId = String(formData.get("relatedLeadId") ?? "") || null;
   const relatedJobId = String(formData.get("relatedJobId") ?? "") || null;
-  const activity = await prisma.activity.create({
-    data: {
+  const activity = await prisma.$transaction(async tx => {
+    await assertActivityCompanyRelations(tx, actor.organizationId, {
+      profileId: relatedProfileId, leadId: relatedLeadId, jobId: relatedJobId,
+    });
+    return tx.activity.create({ data: {
       subject,
       activityType: activityType as Prisma.ActivityCreateInput["activityType"],
       body,
@@ -493,29 +525,61 @@ export async function createActivity(formData: FormData) {
       relatedProfileId,
       relatedLeadId,
       relatedJobId
-    }
+    } });
   });
   revalidatePath("/activities");
   redirect(`/activities/${activity.id}?flash=Activity+created`);
 }
 
 export async function deleteLead(leadId: string) {
-  await requireStaff();
-  await prisma.lead.update({ where: { id: leadId }, data: { deletedAt: new Date() } });
+  const actor = await requireStaff();
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { leads: [leadId] });
+    const foreignLinks = await Promise.all([
+      tx.quote.count({ where: { leadId, organizationId: { not: actor.organizationId } } }),
+      tx.estimateFollowUp.count({ where: { relatedLeadId: leadId, estimate: { quote: { organizationId: { not: actor.organizationId } } } } }),
+    ]);
+    if (foreignLinks.some(Boolean)) throw new CompanyRelationError();
+    await tx.lead.update({ where: { id: leadId }, data: { deletedAt: new Date() } });
+  });
   revalidatePath("/leads");
   redirect("/leads?flash=Lead+deleted");
 }
 
 export async function deleteProfile(profileId: string) {
-  await requireStaff();
-  await prisma.profile.delete({ where: { id: profileId } });
+  const actor = await requireStaff();
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { profiles: [profileId] });
+    const foreignLinks = await Promise.all([
+      tx.profileRelationship.count({ where: { OR: [{ fromProfileId: profileId }, { toProfileId: profileId }],
+        NOT: { AND: [{ organizationId: actor.organizationId }, { fromProfile: { organizationId: actor.organizationId } }, { toProfile: { organizationId: actor.organizationId } }] } } }),
+      tx.profileServiceTag.count({ where: { profileId, serviceTag: { organizationId: { not: actor.organizationId } } } }),
+      tx.property.count({ where: { OR: [{ agentProfileId: profileId }, { investorProfileId: profileId }], organizationId: { not: actor.organizationId } } }),
+      tx.lead.count({ where: { relatedProfileId: profileId, organizationId: { not: actor.organizationId } } }),
+      tx.quote.count({ where: { clientProfileId: profileId, organizationId: { not: actor.organizationId } } }),
+      tx.job.count({ where: { clientProfileId: profileId, organizationId: { not: actor.organizationId } } }),
+      tx.estimate.count({ where: { clientProfileId: profileId, quote: { organizationId: { not: actor.organizationId } } } }),
+    ]);
+    if (foreignLinks.some(Boolean)) throw new CompanyRelationError();
+    await tx.profile.delete({ where: { id: profileId } });
+  });
   revalidatePath("/profiles");
   redirect("/profiles?flash=Contact+deleted");
 }
 
 export async function deleteProperty(propertyId: string) {
-  await requireStaff();
-  await prisma.property.delete({ where: { id: propertyId } });
+  const actor = await requireStaff();
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { properties: [propertyId] });
+    const foreignLinks = await Promise.all([
+      tx.lead.count({ where: { relatedPropertyId: propertyId, organizationId: { not: actor.organizationId } } }),
+      tx.quote.count({ where: { propertyId, organizationId: { not: actor.organizationId } } }),
+      tx.job.count({ where: { propertyId, organizationId: { not: actor.organizationId } } }),
+      tx.estimate.count({ where: { propertyId, quote: { organizationId: { not: actor.organizationId } } } }),
+    ]);
+    if (foreignLinks.some(Boolean)) throw new CompanyRelationError();
+    await tx.property.delete({ where: { id: propertyId } });
+  });
   revalidatePath("/properties");
   redirect("/properties?flash=Property+deleted");
 }
@@ -593,15 +657,16 @@ export async function updateJob(jobId: string, formData: FormData) {
 }
 
 export async function updateProperty(propertyId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = propertySchema.parse(nullable(data(formData)));
-  await prisma.property.update({
-    where: { id: propertyId },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    data: {
-      ...parsed,
-      propertyType: parsed.propertyType as Prisma.PropertyUpdateInput["propertyType"]
-    } as any
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      properties: [propertyId], profiles: [parsed.agentProfileId, parsed.investorProfileId],
+    });
+    await tx.property.update({ where: { id: propertyId },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      data: { ...parsed, propertyType: parsed.propertyType as Prisma.PropertyUpdateInput["propertyType"] } as any,
+    });
   });
   revalidatePath("/properties");
   revalidatePath(`/properties/${propertyId}`);
@@ -609,15 +674,16 @@ export async function updateProperty(propertyId: string, formData: FormData) {
 }
 
 export async function updateQuote(quoteId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = quoteSchema.parse(nullable(data(formData)));
-  await prisma.quote.update({
-    where: { id: quoteId },
-    data: {
-      ...parsed,
-      quoteStatus: parsed.quoteStatus as Prisma.QuoteUpdateInput["quoteStatus"],
-      riskLevel: parsed.riskLevel as Prisma.QuoteUpdateInput["riskLevel"]
-    }
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      quotes: [quoteId], profiles: [parsed.clientProfileId], properties: [parsed.propertyId], leads: [parsed.leadId],
+    });
+    await tx.quote.update({ where: { id: quoteId }, data: {
+      ...parsed, quoteStatus: parsed.quoteStatus as Prisma.QuoteUpdateInput["quoteStatus"],
+      riskLevel: parsed.riskLevel as Prisma.QuoteUpdateInput["riskLevel"],
+    } });
   });
   revalidatePath("/quotes");
   revalidatePath(`/quotes/${quoteId}`);
@@ -625,34 +691,38 @@ export async function updateQuote(quoteId: string, formData: FormData) {
 }
 
 export async function updateEstimateFollowUp(followUpId: string, estimateId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const status = String(formData.get("status") || "SCHEDULED");
   const outcomeNotes = String(formData.get("outcomeNotes") || "") || null;
   const dueDateRaw = formData.get("dueDate");
   const dueDate = dueDateRaw ? new Date(String(dueDateRaw)) : undefined;
-  await prisma.estimateFollowUp.update({
-    where: { id: followUpId },
-    data: {
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      estimates: [estimateId], estimateFollowUps: [followUpId],
+    });
+    const followUp = await tx.estimateFollowUp.findUniqueOrThrow({ where: { id: followUpId }, select: { estimateId: true } });
+    if (followUp.estimateId !== estimateId) throw new CompanyRelationError();
+    await tx.estimateFollowUp.update({ where: { id: followUpId }, data: {
       status: status as Prisma.EstimateFollowUpUpdateInput["status"],
       outcomeNotes,
       ...(dueDate ? { dueDate } : {}),
       ...(status === "COMPLETED" ? { completedAt: new Date() } : {})
-    }
+    } });
   });
   revalidatePath(`/estimates/${estimateId}`);
   redirect(`/estimates/${estimateId}`);
 }
 
 export async function updateEstimate(estimateId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = estimateSchema.parse(nullable(data(formData)));
-  await prisma.estimate.update({
-    where: { id: estimateId },
-    data: {
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { estimates: [estimateId] });
+    await tx.estimate.update({ where: { id: estimateId }, data: {
       ...parsed,
       status: parsed.status as Prisma.EstimateUpdateInput["status"],
       confidenceLevel: parsed.confidenceLevel as Prisma.EstimateUpdateInput["confidenceLevel"]
-    }
+    } });
   });
   revalidatePath("/estimates");
   revalidatePath(`/estimates/${estimateId}`);
@@ -754,28 +824,37 @@ export async function deployProjectTaskTemplate(formData: FormData) {
 }
 
 export async function convertQuoteToJob(quoteId: string) {
-  await requireStaff();
-  const existing = await prisma.job.findFirst({ where: { approvedQuoteId: quoteId, organizationId: DEFAULT_ORG_ID }, select: { id: true } });
+  const actor = await requireStaff();
+  const { existing, estimate } = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { quotes: [quoteId] });
+    return {
+      existing: await tx.job.findFirst({ where: { approvedQuoteId: quoteId, organizationId: actor.organizationId }, select: { id: true } }),
+      estimate: await tx.estimate.findFirst({ where: { quoteId, quote: { organizationId: actor.organizationId }, acceptance: { isNot: null } }, select: { id: true } }),
+    };
+  });
   if (existing) redirect(`/jobs/${existing.id}`);
-  const estimate = await prisma.estimate.findFirst({ where: { quoteId, quote: { organizationId: DEFAULT_ORG_ID }, acceptance: { isNot: null } }, select: { id: true } });
   if (!estimate) redirect(`/quotes/${quoteId}?error=Issue+a+reviewed+estimate+and+retain+client+acceptance+before+creating+the+job`);
   await convertReviewedEstimate(estimate.id);
 }
 
 export async function createEstimateFromQuote(quoteId: string) {
-  await requireStaff();
-  const quote = await prisma.quote.findUniqueOrThrow({
-    where: { id: quoteId },
-    include: { lead: true, clientProfile: true, property: true, lineItems: true }
-  });
-  const estimateCount = await prisma.estimate.count();
-  const subtotal = Number(quote.totalTarget);
-  const total = Number(quote.finalQuoteAmount ?? quote.totalTarget);
-  const confidenceScore = quote.lineItems.length >= 4 && quote.siteVisitRequired === false ? 78 : quote.lineItems.length >= 3 ? 68 : 48;
-  const estimate = await prisma.estimate.create({
+  const actor = await requireStaff();
+  const estimate = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { quotes: [quoteId] });
+    const quote = await tx.quote.findUniqueOrThrow({ where: { id: quoteId },
+      include: { lead: true, clientProfile: true, property: true, lineItems: true } });
+    await assertCompanyRelations(tx, actor.organizationId, {
+      profiles: [quote.clientProfileId], properties: [quote.propertyId], leads: [quote.leadId],
+      catalogItems: quote.lineItems.map(line => line.costCatalogItemId),
+    });
+    const estimateCount = await tx.estimate.count({ where: { quote: { organizationId: actor.organizationId } } });
+    const subtotal = Number(quote.totalTarget);
+    const total = Number(quote.finalQuoteAmount ?? quote.totalTarget);
+    const confidenceScore = quote.lineItems.length >= 4 && quote.siteVisitRequired === false ? 78 : quote.lineItems.length >= 3 ? 68 : 48;
+    const created = await tx.estimate.create({
     data: {
       quoteId,
-      estimateNumber: `EST-${String(estimateCount + 1001).padStart(4, "0")}`,
+      estimateNumber: `EST-${String(estimateCount + 1001).padStart(4, "0")}-${randomUUID().slice(0, 8).toUpperCase()}`,
       clientProfileId: quote.clientProfileId,
       propertyId: quote.propertyId,
       subtotal,
@@ -833,8 +912,10 @@ export async function createEstimateFromQuote(quoteId: string) {
         ]
       }
     }
+    });
+    await tx.quote.update({ where: { id: quoteId }, data: { quoteStatus: "SENT" } });
+    return created;
   });
-  await prisma.quote.update({ where: { id: quoteId }, data: { quoteStatus: "SENT" } });
   revalidatePath("/estimates");
   revalidatePath(`/quotes/${quoteId}`);
   redirect(`/estimates/${estimate.id}`);
@@ -1067,7 +1148,7 @@ export async function createPaymentLink(invoiceId: string) {
 }
 
 export async function saveEstimateOption(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const estimateId = String(formData.get("estimateId") || "");
   const optionId = String(formData.get("optionId") || "") || null;
   const optionTier = String(formData.get("optionTier") || "BETTER");
@@ -1076,34 +1157,42 @@ export async function saveEstimateOption(formData: FormData) {
   const total = Number(formData.get("total") || 0);
   const included = formData.get("included") === "true";
 
-  if (optionId) {
-    await prisma.estimateOption.update({
-      where: { id: optionId },
-      data: { optionName, description, total, included }
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      estimates: [estimateId], estimateOptions: [optionId],
     });
-  } else {
-    const sortOrder = optionTier === "GOOD" ? 1 : optionTier === "BETTER" ? 2 : 3;
-    await prisma.estimateOption.create({
-      data: { estimateId, optionTier, optionName, description, total, included, sortOrder }
-    });
-  }
+    if (optionId) {
+      const option = await tx.estimateOption.findUniqueOrThrow({ where: { id: optionId }, select: { estimateId: true } });
+      if (option.estimateId !== estimateId) throw new CompanyRelationError();
+      await tx.estimateOption.update({ where: { id: optionId }, data: { optionName, description, total, included } });
+    } else {
+      const sortOrder = optionTier === "GOOD" ? 1 : optionTier === "BETTER" ? 2 : 3;
+      await tx.estimateOption.create({ data: { estimateId, optionTier, optionName, description, total, included, sortOrder } });
+    }
+  });
   revalidatePath(`/estimates/${estimateId}`);
   revalidatePath(`/estimates/${estimateId}/proposal`);
   redirect(`/estimates/${estimateId}/proposal`);
 }
 
 export async function deleteEstimateOption(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const optionId = String(formData.get("optionId") || "");
   const estimateId = String(formData.get("estimateId") || "");
-  await prisma.estimateOption.delete({ where: { id: optionId } });
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { estimates: [estimateId], estimateOptions: [optionId] });
+    const option = await tx.estimateOption.findUniqueOrThrow({ where: { id: optionId }, select: { estimateId: true } });
+    if (option.estimateId !== estimateId) throw new CompanyRelationError();
+    await tx.estimateOption.delete({ where: { id: optionId } });
+  });
   revalidatePath(`/estimates/${estimateId}`);
   revalidatePath(`/estimates/${estimateId}/proposal`);
   redirect(`/estimates/${estimateId}/proposal`);
 }
 
-async function recalculateQuote(quoteId: string) {
-  const quote = await prisma.quote.findUniqueOrThrow({ where: { id: quoteId }, include: { lineItems: true } });
+async function recalculateQuote(tx: Prisma.TransactionClient, organizationId: string, quoteId: string) {
+  await assertCompanyRelations(tx, organizationId, { quotes: [quoteId] });
+  const quote = await tx.quote.findUniqueOrThrow({ where: { id: quoteId }, include: { lineItems: true } });
   const totals = calculateQuoteTotals(
     quote.lineItems.map((item) => ({
       totalLow: Number(item.totalLow),
@@ -1114,7 +1203,7 @@ async function recalculateQuote(quoteId: string) {
     Number(quote.contingency),
     quote.finalQuoteAmount ? Number(quote.finalQuoteAmount) : null
   );
-  await prisma.quote.update({
+  await tx.quote.update({
     where: { id: quoteId },
     data: {
       totalLow: totals.totalLow,
@@ -1215,7 +1304,7 @@ export async function deleteFieldReport(formData: FormData) {
 }
 
 export async function createProfileRelationship(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const fromProfileId = String(formData.get("fromProfileId") || "");
   const toProfileId = String(formData.get("toProfileId") || "");
   const relationshipType = String(formData.get("relationshipType") || "").trim();
@@ -1223,10 +1312,13 @@ export async function createProfileRelationship(formData: FormData) {
   if (!fromProfileId || !toProfileId || !relationshipType || fromProfileId === toProfileId) {
     redirect(`/profiles/${fromProfileId}`);
   }
-  await prisma.profileRelationship.upsert({
-    where: { fromProfileId_toProfileId_relationshipType: { fromProfileId, toProfileId, relationshipType } },
-    create: { fromProfileId, toProfileId, relationshipType, notes, organizationId: DEFAULT_ORG_ID },
-    update: { notes }
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { profiles: [fromProfileId, toProfileId] });
+    await tx.profileRelationship.upsert({
+      where: { fromProfileId_toProfileId_relationshipType: { fromProfileId, toProfileId, relationshipType } },
+      create: { fromProfileId, toProfileId, relationshipType, notes, organizationId: actor.organizationId },
+      update: { notes },
+    });
   });
   revalidatePath(`/profiles/${fromProfileId}`);
   revalidatePath(`/profiles/${toProfileId}`);
@@ -1234,10 +1326,15 @@ export async function createProfileRelationship(formData: FormData) {
 }
 
 export async function deleteProfileRelationship(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const id = String(formData.get("id") || "");
   const profileId = String(formData.get("profileId") || "");
-  await prisma.profileRelationship.delete({ where: { id } });
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { profiles: [profileId], profileRelationships: [id] });
+    const relationship = await tx.profileRelationship.findUniqueOrThrow({ where: { id }, select: { fromProfileId: true, toProfileId: true } });
+    if (relationship.fromProfileId !== profileId && relationship.toProfileId !== profileId) throw new CompanyRelationError();
+    await tx.profileRelationship.delete({ where: { id } });
+  });
   revalidatePath(`/profiles/${profileId}`);
   redirect(`/profiles/${profileId}`);
 }

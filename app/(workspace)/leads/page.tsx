@@ -5,6 +5,7 @@ import { StatusPill } from "@/components/status-pill";
 import { leadPriorityScore } from "@/lib/calculations";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { leadInOrganization } from "@/lib/company-scope";
 
 const STAGE_COLORS: Record<string, string> = {
   NEW_LEAD: "bg-blue-50 border-blue-200 text-blue-800",
@@ -16,14 +17,14 @@ const STAGE_COLORS: Record<string, string> = {
 };
 
 export default async function LeadsPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const [leads, stages] = await Promise.all([
     prisma.lead.findMany({
-      where: { deletedAt: null },
+      where: leadInOrganization(actor.organizationId, { deletedAt: null }),
       include: { profile: true, property: true, owner: true },
       orderBy: { updatedAt: "desc" }
     }),
-    prisma.lead.groupBy({ by: ["status"], _count: true, where: { deletedAt: null } })
+    prisma.lead.groupBy({ by: ["status"], _count: true, where: leadInOrganization(actor.organizationId, { deletedAt: null }) })
   ]);
 
   const stageOrder = ["NEW_LEAD", "QUALIFIED", "PROPOSAL", "CONVERTED", "WON", "LOST"];

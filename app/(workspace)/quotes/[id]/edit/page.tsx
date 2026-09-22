@@ -4,16 +4,19 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { leadInOrganization, profileInOrganization, propertyInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditQuotePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [quote, profiles, properties, leads] = await Promise.all([
-    prisma.quote.findUniqueOrThrow({ where: { id } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
-    prisma.property.findMany({ select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
-    prisma.lead.findMany({ select: { id: true, leadName: true }, orderBy: { leadName: "asc" } })
+    prisma.quote.findFirst({ where: quoteInOrganization(actor.organizationId, { id }) }),
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+    prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
+    prisma.lead.findMany({ where: leadInOrganization(actor.organizationId), select: { id: true, leadName: true }, orderBy: { leadName: "asc" } })
   ]);
+  if (!quote) notFound();
   const saveQuote = updateQuote.bind(null, quote.id);
 
   return (

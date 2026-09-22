@@ -5,16 +5,19 @@ import { Panel, Button, LinkButton } from "@/components/ui";
 import { StatusPill } from "@/components/status-pill";
 import { dateShort, titleFromEnum } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { estimateInOrganization, leadInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 const FOLLOW_UP_STATUSES = ["SCHEDULED", "DUE", "COMPLETED", "SKIPPED"] as const;
 
 export default async function FollowUpDetailPage({ params }: { params: Promise<{ id: string; followUpId: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id, followUpId } = await params;
-  const followUp = await prisma.estimateFollowUp.findUniqueOrThrow({
-    where: { id: followUpId },
+  const followUp = await prisma.estimateFollowUp.findFirst({
+    where: { id: followUpId, estimate: estimateInOrganization(actor.organizationId, { id }), OR: [{ relatedLeadId: null }, { lead: leadInOrganization(actor.organizationId) }] },
     include: { estimate: true }
   });
+  if (!followUp) notFound();
   const saveFollowUp = updateEstimateFollowUp.bind(null, followUpId, id);
 
   return (

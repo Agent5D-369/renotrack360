@@ -6,22 +6,28 @@ import { LinkButton, Panel } from "@/components/ui";
 import { buildMailtoLink } from "@/lib/email";
 import { dateShort, money, titleFromEnum } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { estimateInOrganization, jobInOrganization, leadInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EstimateDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const estimate = await prisma.estimate.findUniqueOrThrow({
-    where: { id },
+  const estimate = await prisma.estimate.findFirst({
+    where: estimateInOrganization(actor.organizationId, { id, quote: quoteInOrganization(actor.organizationId) }),
     include: {
-      quote: { include: { lineItems: true, financingRecords: true } },
+      quote: { include: { lineItems: true, financingRecords: { where: { AND: [
+        { OR: [{ clientProfileId: null }, { clientProfile: { organizationId: actor.organizationId } }] },
+        { OR: [{ jobId: null }, { job: jobInOrganization(actor.organizationId) }] },
+      ] } } } },
       clientProfile: true,
       property: true,
-      followUps: { orderBy: { dueDate: "asc" } },
+      followUps: { where: { OR: [{ relatedLeadId: null }, { lead: leadInOrganization(actor.organizationId) }] }, orderBy: { dueDate: "asc" } },
       revisions: { orderBy: { revisionNumber: "desc" } },
       viewEvents: { orderBy: { viewedAt: "desc" } },
       options: { orderBy: { sortOrder: "asc" } }
     }
   });
+  if (!estimate) notFound();
 
   const readiness = [
     ["Scope clarity", estimate.scopeClarity],

@@ -4,6 +4,8 @@ import { deleteEstimateOption, saveEstimateOption } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { estimateInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 const tiers = [
   {
@@ -37,16 +39,17 @@ const tiers = [
 ] as const;
 
 export default async function ProposalPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const estimate = await prisma.estimate.findUniqueOrThrow({
-    where: { id },
+  const estimate = await prisma.estimate.findFirst({
+    where: estimateInOrganization(actor.organizationId, { id }),
     include: {
       clientProfile: true,
       property: true,
       options: { orderBy: { sortOrder: "asc" } }
     }
   });
+  if (!estimate) notFound();
 
   const optionsByTier = new Map(estimate.options.map((opt) => [opt.optionTier, opt]));
   const clientName = estimate.clientProfile?.profileName ?? "your client";

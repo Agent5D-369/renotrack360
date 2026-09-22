@@ -4,13 +4,14 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { leadInOrganization, profileInOrganization, propertyInOrganization } from "@/lib/company-scope";
 
 export default async function NewQuotePage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const [profiles, properties, leads] = await Promise.all([
-    prisma.profile.findMany({ select: { id: true, profileName: true } }),
-    prisma.property.findMany({ select: { id: true, propertyAddress: true } }),
-    prisma.lead.findMany({ select: { id: true, leadName: true } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true } }),
+    prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), select: { id: true, propertyAddress: true } }),
+    prisma.lead.findMany({ where: leadInOrganization(actor.organizationId), select: { id: true, leadName: true } })
   ]);
   return (
     <>

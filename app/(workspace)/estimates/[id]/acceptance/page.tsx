@@ -2,8 +2,9 @@ import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
-import { ownedEstimate, estimateReviewDigest } from "@/lib/estimate-acceptance";
+import { estimateReviewDigest } from "@/lib/estimate-acceptance";
+import { estimateInOrganization, jobInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 import { uploadEstimateContract, issueReviewedEstimate, convertReviewedEstimate } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { Panel, Button } from "@/components/ui";
@@ -12,13 +13,29 @@ import { BillingScheduleFields } from "@/components/billing-schedule-fields";
 import { defaultBillingMilestones } from "@/lib/billing-schedule";
 
 export default async function EstimateAcceptancePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string,string>> }) {
-  await requireStaffPage();
-  const actor = await requireStaffPage(), { id } = await params, query = await searchParams, estimate = await ownedEstimate(prisma,id);
+  const actor = await requireStaffPage();
+  const { id } = await params, query = await searchParams;
+  const estimate = await prisma.estimate.findFirst({
+    where: estimateInOrganization(actor.organizationId, { id, quote: quoteInOrganization(actor.organizationId) }),
+    include: {
+      quote: { include: { lineItems: { orderBy: { id: "asc" } } } },
+      clientProfile: true,
+      property: true,
+      acceptance: { include: { snapshot: true, conversion: true } },
+    },
+  });
+  if (!estimate) notFound();
+  if (estimate.acceptance && (estimate.acceptance.snapshot.organizationId !== actor.organizationId || estimate.acceptance.snapshot.estimateId !== estimate.id)) notFound();
+  if (estimate.acceptance?.conversion && !await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id: estimate.acceptance.conversion.jobId }),
+    select: { id: true },
+  })) notFound();
   const [prices, files, snapshots] = await Promise.all([
-    prisma.priceSnapshot.findMany({where:{organizationId:DEFAULT_ORG_ID,sellingPrice:estimate.total},orderBy:{createdAt:"desc"},take:100}),
-    prisma.fileAsset.findMany({where:{organizationId:DEFAULT_ORG_ID,entityType:"QUOTE",entityId:estimate.quoteId,mimeType:"application/pdf",storageProvider:"private-volume"},orderBy:{createdAt:"desc"}}),
-    prisma.estimateSnapshot.findMany({where:{estimateId:id,organizationId:DEFAULT_ORG_ID},include:{approval:true},orderBy:{createdAt:"desc"},take:20}),
+    prisma.priceSnapshot.findMany({where:{organizationId:actor.organizationId,sellingPrice:estimate.total},orderBy:{createdAt:"desc"},take:100}),
+    prisma.fileAsset.findMany({where:{organizationId:actor.organizationId,entityType:"QUOTE",entityId:estimate.quoteId,mimeType:"application/pdf",storageProvider:"private-volume"},orderBy:{createdAt:"desc"}}),
+    prisma.estimateSnapshot.findMany({where:{estimateId:id,organizationId:actor.organizationId},include:{approval:true},orderBy:{createdAt:"desc"},take:20}),
   ]);
+  if (snapshots.some(snapshot => snapshot.approval.estimateId !== snapshot.estimateId)) notFound();
   const field="mt-1 block w-full rounded border border-border bg-white p-2";
   return <><PageHeader title={`Reviewed proposal · ${estimate.estimateNumber}`} body="Retain the exact document, scope and price before requesting a client response." /><Link href={`/estimates/${id}`} className="text-primary underline">← Estimate</Link>
     {query.error && <p role="alert" className="my-4 rounded border border-amber-300 bg-amber-50 p-3">{query.error}</p>}

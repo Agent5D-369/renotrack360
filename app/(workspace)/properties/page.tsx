@@ -3,10 +3,11 @@ import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
 import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { propertyInOrganization } from "@/lib/company-scope";
 
 export default async function PropertiesPage() {
-  await requireStaffPage();
-  const properties = await prisma.property.findMany({ include: { agentProfile: true, investorProfile: true }, orderBy: { updatedAt: "desc" } });
+  const actor = await requireStaffPage();
+  const properties = await prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), include: { agentProfile: true, investorProfile: true }, orderBy: { updatedAt: "desc" } });
   return (
     <DataTable
       title="Properties"

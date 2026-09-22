@@ -4,10 +4,11 @@ import { LinkButton } from "@/components/ui";
 import { StatusPill } from "@/components/status-pill";
 import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { quoteInOrganization } from "@/lib/company-scope";
 
 export default async function QuotesPage() {
-  await requireStaffPage();
-  const quotes = await prisma.quote.findMany({ include: { clientProfile: true, property: true }, orderBy: { updatedAt: "desc" } });
+  const actor = await requireStaffPage();
+  const quotes = await prisma.quote.findMany({ where: quoteInOrganization(actor.organizationId), include: { clientProfile: true, property: true }, orderBy: { updatedAt: "desc" } });
   return (
     <div className="grid gap-5">
       <div className="flex flex-col gap-2 rounded-lg border border-border bg-white p-4 shadow-soft md:flex-row md:items-center md:justify-between">

@@ -6,6 +6,7 @@ import { profileScore } from "@/lib/calculations";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import type { Prisma } from "@prisma/client";
+import { profileInOrganization, serviceTagInOrganization } from "@/lib/company-scope";
 
 const KIND_FILTERS = [
   { label: "All contacts", kind: undefined, type: undefined },
@@ -27,7 +28,7 @@ export default async function ContactsPage({
 }: {
   searchParams: Promise<{ kind?: string; type?: string }>;
 }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { kind, type } = await searchParams;
 
   const where: Prisma.ProfileWhereInput = {};
@@ -35,8 +36,10 @@ export default async function ContactsPage({
   if (type) where.profileType = type as Prisma.ProfileWhereInput["profileType"];
 
   const profiles = await prisma.profile.findMany({
-    where,
-    include: { serviceTags: { include: { serviceTag: true } }, companyProfile: true },
+    where: profileInOrganization(actor.organizationId, { AND: [where, {
+      OR: [{ companyProfileId: null }, { companyProfile: { organizationId: actor.organizationId } }],
+    }] }),
+    include: { serviceTags: { where: { serviceTag: serviceTagInOrganization(actor.organizationId) }, include: { serviceTag: true } }, companyProfile: true },
     orderBy: { updatedAt: "desc" }
   });
 

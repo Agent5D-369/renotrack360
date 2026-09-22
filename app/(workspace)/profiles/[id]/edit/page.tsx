@@ -4,15 +4,18 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { profileInOrganization, serviceTagInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditProfilePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [profile, profiles, serviceTags] = await Promise.all([
-    prisma.profile.findUniqueOrThrow({ where: { id }, include: { serviceTags: true } }),
-    prisma.profile.findMany({ where: { NOT: { id } }, select: { id: true, profileName: true, profileKind: true }, orderBy: { profileName: "asc" } }),
-    prisma.serviceTag.findMany({ where: { active: true }, orderBy: [{ category: "asc" }, { name: "asc" }] })
+    prisma.profile.findFirst({ where: profileInOrganization(actor.organizationId, { id, OR: [{ companyProfileId: null }, { companyProfile: { organizationId: actor.organizationId } }] }), include: { serviceTags: { where: { serviceTag: serviceTagInOrganization(actor.organizationId) } } } }),
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId, { NOT: { id } }), select: { id: true, profileName: true, profileKind: true }, orderBy: { profileName: "asc" } }),
+    prisma.serviceTag.findMany({ where: serviceTagInOrganization(actor.organizationId, { active: true }), orderBy: [{ category: "asc" }, { name: "asc" }] })
   ]);
+  if (!profile) notFound();
   const selectedTags = new Set(profile.serviceTags.map((tag) => tag.serviceTagId));
 
   return (

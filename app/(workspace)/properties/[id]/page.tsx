@@ -6,20 +6,23 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { money, titleFromEnum, dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization, leadInOrganization, propertyInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function PropertyDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const property = await prisma.property.findUniqueOrThrow({
-    where: { id },
+  const property = await prisma.property.findFirst({
+    where: propertyInOrganization(actor.organizationId, { id }),
     include: {
       agentProfile: true,
       investorProfile: true,
-      leads: { orderBy: { createdAt: "desc" } },
-      quotes: { orderBy: { createdAt: "desc" }, select: { id: true, quoteName: true, finalQuoteAmount: true, totalTarget: true, quoteStatus: true } },
-      jobs: { orderBy: { updatedAt: "desc" }, select: { id: true, jobName: true, jobStatus: true, contractAmount: true } }
+      leads: { where: leadInOrganization(actor.organizationId), orderBy: { createdAt: "desc" } },
+      quotes: { where: quoteInOrganization(actor.organizationId), orderBy: { createdAt: "desc" }, select: { id: true, quoteName: true, finalQuoteAmount: true, totalTarget: true, quoteStatus: true } },
+      jobs: { where: jobInOrganization(actor.organizationId), orderBy: { updatedAt: "desc" }, select: { id: true, jobName: true, jobStatus: true, contractAmount: true } }
     }
   });
+  if (!property) notFound();
 
   return (
     <>

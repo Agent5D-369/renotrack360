@@ -7,11 +7,14 @@ import { LinkButton, Panel } from "@/components/ui";
 import { leadPriorityScore } from "@/lib/calculations";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { leadInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const lead = await prisma.lead.findUniqueOrThrow({ where: { id }, include: { profile: true, property: true, quotes: true, owner: true } });
+  const lead = await prisma.lead.findFirst({ where: leadInOrganization(actor.organizationId, { id }), include: { profile: true, property: true, quotes: { where: quoteInOrganization(actor.organizationId) }, owner: true } });
+  if (!lead) notFound();
   return (
     <>
       <PageHeader title={lead.leadName} body="Opportunity detail and conversion context." />

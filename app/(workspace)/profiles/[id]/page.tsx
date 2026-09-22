@@ -8,27 +8,30 @@ import { StatusPill } from "@/components/status-pill";
 import { profileScore } from "@/lib/calculations";
 import { dateShort, money, titleFromEnum } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { activityInOrganization, jobInOrganization, leadInOrganization, profileInOrganization, quoteInOrganization, serviceTagInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function ProfileDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [profile, allProfiles] = await Promise.all([
-    prisma.profile.findUniqueOrThrow({
-      where: { id },
+    prisma.profile.findFirst({
+      where: profileInOrganization(actor.organizationId, { id, OR: [{ companyProfileId: null }, { companyProfile: { organizationId: actor.organizationId } }] }),
       include: {
-        leads: { orderBy: { createdAt: "desc" }, take: 5 },
-        quotes: { orderBy: { createdAt: "desc" }, take: 5, select: { id: true, quoteName: true, finalQuoteAmount: true, totalTarget: true, quoteStatus: true } },
-        jobs: { orderBy: { updatedAt: "desc" }, take: 5, select: { id: true, jobName: true, jobStatus: true, contractAmount: true } },
-        activities: { orderBy: { createdAt: "desc" }, take: 3 },
+        leads: { where: leadInOrganization(actor.organizationId), orderBy: { createdAt: "desc" }, take: 5 },
+        quotes: { where: quoteInOrganization(actor.organizationId), orderBy: { createdAt: "desc" }, take: 5, select: { id: true, quoteName: true, finalQuoteAmount: true, totalTarget: true, quoteStatus: true } },
+        jobs: { where: jobInOrganization(actor.organizationId), orderBy: { updatedAt: "desc" }, take: 5, select: { id: true, jobName: true, jobStatus: true, contractAmount: true } },
+        activities: { where: activityInOrganization(actor.organizationId), orderBy: { createdAt: "desc" }, take: 3 },
         companyProfile: true,
-        companyContacts: { orderBy: { profileName: "asc" } },
-        serviceTags: { include: { serviceTag: true } },
-        relationshipsFrom: { include: { toProfile: true } },
-        relationshipsTo: { include: { fromProfile: true } }
+        companyContacts: { where: profileInOrganization(actor.organizationId), orderBy: { profileName: "asc" } },
+        serviceTags: { where: { serviceTag: serviceTagInOrganization(actor.organizationId) }, include: { serviceTag: true } },
+        relationshipsFrom: { where: { organizationId: actor.organizationId, toProfile: profileInOrganization(actor.organizationId) }, include: { toProfile: true } },
+        relationshipsTo: { where: { organizationId: actor.organizationId, fromProfile: profileInOrganization(actor.organizationId) }, include: { fromProfile: true } }
       }
     }),
-    prisma.profile.findMany({ select: { id: true, profileName: true, profileType: true }, orderBy: { profileName: "asc" } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true, profileType: true }, orderBy: { profileName: "asc" } })
   ]);
+  if (!profile) notFound();
   const otherProfiles = allProfiles.filter((p) => p.id !== id);
   const hasComplianceData = profile.w9Status !== "NOT_REQUIRED" || profile.vendorOnboardingStatus !== "NOT_STARTED" || profile.insuranceExpiration || profile.complianceNotes;
 

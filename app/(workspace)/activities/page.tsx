@@ -3,12 +3,14 @@ import { requireStaffPage } from "@/lib/staff-access";
 import { StatusPill } from "@/components/status-pill";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { activityInOrganization } from "@/lib/company-scope";
 
 export default async function ActivitiesPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const sp = await searchParams;
   const now = new Date();
-  const where = sp.due === "true" ? { dueDate: { lte: now }, completedAt: null } : {};
+  const where = activityInOrganization(actor.organizationId,
+    sp.due === "true" ? { dueDate: { lte: now }, completedAt: null } : {});
   const activities = await prisma.activity.findMany({ where, include: { profile: true, lead: true, job: true, quote: true }, orderBy: { dueDate: "asc" } });
   return (
     <DataTable

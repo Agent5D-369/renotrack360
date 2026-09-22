@@ -3,18 +3,19 @@ import { createActivity } from "@/app/actions";
 import { PageHeader } from "@/components/page-header";
 import { options } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization, leadInOrganization, profileInOrganization } from "@/lib/company-scope";
 
 export default async function NewActivityPage({
   searchParams
 }: {
   searchParams: Promise<Record<string, string>>;
 }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const sp = await searchParams;
   const [profiles, leads, jobs] = await Promise.all([
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
-    prisma.lead.findMany({ where: { deletedAt: null }, select: { id: true, leadName: true }, orderBy: { leadName: "asc" } }),
-    prisma.job.findMany({ select: { id: true, jobName: true }, orderBy: { jobName: "asc" } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+    prisma.lead.findMany({ where: leadInOrganization(actor.organizationId, { deletedAt: null }), select: { id: true, leadName: true }, orderBy: { leadName: "asc" } }),
+    prisma.job.findMany({ where: jobInOrganization(actor.organizationId), select: { id: true, jobName: true }, orderBy: { jobName: "asc" } })
   ]);
 
   return (

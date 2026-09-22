@@ -4,14 +4,15 @@ import { PageHeader } from "@/components/page-header";
 import { createLead } from "@/app/actions";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { profileInOrganization, propertyInOrganization, userInOrganization } from "@/lib/company-scope";
 
 export default async function NewLeadPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { returnTo } = await searchParams;
   const [profiles, properties, users] = await Promise.all([
-    prisma.profile.findMany({ select: { id: true, profileName: true } }),
-    prisma.property.findMany({ select: { id: true, propertyAddress: true } }),
-    prisma.user.findMany({ select: { id: true, name: true, email: true }, orderBy: { email: "asc" } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true } }),
+    prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), select: { id: true, propertyAddress: true } }),
+    prisma.user.findMany({ where: userInOrganization(actor.organizationId), select: { id: true, name: true, email: true }, orderBy: { email: "asc" } })
   ]);
   return (
     <>

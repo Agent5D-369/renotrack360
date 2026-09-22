@@ -1,22 +1,22 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import { FLIPSIDE_NAME } from "@/lib/flipside-brand";
+import { requireStaffPage } from "@/lib/staff-access";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NavigationProgressIsland } from "@/components/navigation-progress-island";
 import { GuideProgressBar } from "@/components/guide-progress-bar";
 import { SidebarNav, MobileNav } from "@/components/sidebar-nav";
 import { toggleUiMode } from "@/app/actions";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
 import { themeClass } from "@/lib/themes";
 import { cn, hexToHsl } from "@/lib/utils";
 
 export async function AppShell({ children, uiMode = "POWER" }: { children: React.ReactNode; uiMode?: string }) {
+  const actor = await requireStaffPage();
   const [session, org] = await Promise.all([
     getServerSession(authOptions),
     prisma.organization.findUnique({
-      where: { id: DEFAULT_ORG_ID },
+      where: { id: actor.organizationId },
       select: { themePreference: true, brandColor: true, brandSecondaryColor: true, name: true, companyTagline: true, logoUrl: true }
     })
   ]);
@@ -40,7 +40,7 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
       <aside className="hidden border-r border-border text-white lg:block lg:min-h-screen" style={{ backgroundColor: sidebarBg }}>
         {/* Logo / brand */}
         <div className="flex min-h-24 items-center gap-3 border-b border-white/10 px-4 py-3">
-          <div className="min-w-0"><p className="text-xl font-bold tracking-tight">RenoTrack360</p><p className="mt-1 text-xs text-white/70">{FLIPSIDE_NAME}</p></div>
+          <div className="min-w-0"><p className="text-xl font-bold tracking-tight">RenoTrack360</p><p className="mt-1 text-xs text-white/70">{org?.name ?? "Company workspace"}</p></div>
         </div>
 
         {/* Navigation */}
@@ -60,7 +60,7 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
         {/* Top header bar */}
         <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-sm md:px-5">
           <p className="text-sm text-muted-foreground">
-            <span className="font-semibold text-foreground lg:hidden">RenoTrack360</span><span className="hidden lg:inline">{FLIPSIDE_NAME} · Austin</span>
+            <span className="font-semibold text-foreground lg:hidden">RenoTrack360</span><span className="hidden lg:inline">{org?.name ?? "Company workspace"}</span>
           </p>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/guided" className="hidden text-muted-foreground hover:text-foreground md:block">

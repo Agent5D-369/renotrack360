@@ -4,7 +4,7 @@ import { AiTestButton } from "@/components/ai-test-button";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
-import { appThemes, DEFAULT_ORG_ID } from "@/lib/constants";
+import { appThemes } from "@/lib/constants";
 import { COUNTRIES } from "@/lib/address";
 import { prisma } from "@/lib/prisma";
 import { TeamSection } from "@/components/team-section";
@@ -19,16 +19,15 @@ const PROVIDERS = [
 ] as const;
 
 export default async function SettingsPage() {
-  await requireStaffPage();
-  const org = await prisma.organization.upsert({
-    where: { id: DEFAULT_ORG_ID },
-    update: {},
-    create: { id: DEFAULT_ORG_ID, name: "RenoTrack360" }
+  const actor = await requireStaffPage();
+  const organizationId = actor.organizationId;
+  const org = await prisma.organization.findUniqueOrThrow({
+    where: { id: organizationId }
   });
   const [dropdowns, aiProviders, members] = await Promise.all([
-    prisma.dropdownOption.findMany({ where: { organizationId: DEFAULT_ORG_ID, active: true }, orderBy: [{ optionSet: "asc" }, { sortOrder: "asc" }, { label: "asc" }] }),
-    prisma.aiProviderConfig.findMany({ where: { organizationId: DEFAULT_ORG_ID }, orderBy: { updatedAt: "desc" } }),
-    prisma.membership.findMany({ where: { organizationId: DEFAULT_ORG_ID, status: "ACTIVE" }, include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } })
+    prisma.dropdownOption.findMany({ where: { organizationId, active: true }, orderBy: [{ optionSet: "asc" }, { sortOrder: "asc" }, { label: "asc" }] }),
+    prisma.aiProviderConfig.findMany({ where: { organizationId }, orderBy: { updatedAt: "desc" } }),
+    prisma.membership.findMany({ where: { organizationId, status: "ACTIVE", user: { organizationId } }, include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } })
   ]);
   const aiByProvider = new Map(aiProviders.map((p) => [p.provider, p]));
   const dropdownGroups = dropdowns.reduce<Record<string, typeof dropdowns>>((groups, option) => {
@@ -350,7 +349,7 @@ export default async function SettingsPage() {
       {/* Billing */}
 
       {/* Team members */}
-      <TeamSection members={members} orgId={DEFAULT_ORG_ID} />
+      <TeamSection members={members} orgId={organizationId} />
     </>
   );
 }

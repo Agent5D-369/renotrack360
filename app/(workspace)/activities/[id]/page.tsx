@@ -5,14 +5,17 @@ import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { activityInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function ActivityDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const activity = await prisma.activity.findUniqueOrThrow({
-    where: { id },
+  const activity = await prisma.activity.findFirst({
+    where: activityInOrganization(actor.organizationId, { id }),
     include: { profile: true, lead: true, job: true, quote: true, invoice: true }
   });
+  if (!activity) notFound();
 
   const relatedLinks: { label: string; href: string }[] = [];
   if (activity.lead) relatedLinks.push({ label: `Lead: ${activity.lead.leadName}`, href: `/leads/${activity.lead.id}` });

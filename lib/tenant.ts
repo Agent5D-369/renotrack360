@@ -1,7 +1,7 @@
-// Tenant resolution — resolves the correct organizationId for the current request.
-// Currently single-tenant (always returns DEFAULT_ORG_ID).
-// When TENANT_MODE=MULTI, reads from the authenticated session instead.
-// All server actions should use getOrgId() instead of DEFAULT_ORG_ID directly.
+// Legacy display/configuration helper. This is not an authorization boundary.
+// Runtime record access must use the organization from requireStaff/requireStaffPage,
+// which verifies current database membership. Do not use a session claim to authorize
+// company data, and do not enable MULTI until the complete isolation gate passes.
 
 import type { Session } from "next-auth";
 import { DEFAULT_ORG_ID } from "@/lib/constants";

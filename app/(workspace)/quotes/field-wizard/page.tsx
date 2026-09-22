@@ -10,6 +10,7 @@ import { Panel } from "@/components/ui";
 import { allowanceItems, exteriorChecks, fieldStandardChecks, garageChecks, materialResponsibilityItems, roomPresets } from "@/lib/field-estimate-wizard";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { leadInOrganization, profileInOrganization, propertyInOrganization } from "@/lib/company-scope";
 
 function inputClass() {
   return "h-11 w-full rounded-md border border-border bg-white px-3 text-base text-foreground outline-none focus:ring-2 focus:ring-primary";
@@ -54,11 +55,11 @@ const extraRoomSlots = Array.from({ length: 6 }, (_, index) => index + 1);
 const customRoomTypes = ["Bedroom", "Bathroom", "Kitchen", "Outdoor kitchen", "Living room", "Dining room", "Office", "Laundry room", "Garage", "Hall", "Flex area"] as const;
 
 export default async function FieldQuoteWizardPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const [profiles, properties, leads] = await Promise.all([
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
-    prisma.property.findMany({ select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
-    prisma.lead.findMany({ select: { id: true, leadName: true }, orderBy: { updatedAt: "desc" } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+    prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
+    prisma.lead.findMany({ where: leadInOrganization(actor.organizationId), select: { id: true, leadName: true }, orderBy: { updatedAt: "desc" } })
   ]);
 
   return (
@@ -237,5 +238,4 @@ export default async function FieldQuoteWizardPage() {
     </form>
   );
 }
-
 

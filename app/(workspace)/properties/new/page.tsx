@@ -4,15 +4,15 @@ import { AddressFields } from "@/components/address-fields";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { prisma } from "@/lib/prisma";
+import { profileInOrganization } from "@/lib/company-scope";
 
 export default async function NewPropertyPage({ searchParams }: { searchParams: Promise<{ returnTo?: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { returnTo } = await searchParams;
   const [profiles, org] = await Promise.all([
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
-    prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { country: true } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+    prisma.organization.findUnique({ where: { id: actor.organizationId }, select: { country: true } })
   ]);
   const profileOptions = relationOptions(profiles.map((p) => ({ id: p.id, label: p.profileName })));
   const defaultCountry = (org as { country?: string } | null)?.country ?? "US";

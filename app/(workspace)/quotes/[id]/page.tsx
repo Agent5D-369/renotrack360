@@ -9,17 +9,20 @@ import { Button, Panel } from "@/components/ui";
 import { money } from "@/lib/format";
 import { options } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { costCatalogItemInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function QuoteDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [quote, catalog] = await Promise.all([
-    prisma.quote.findUniqueOrThrow({
-      where: { id },
+    prisma.quote.findFirst({
+      where: quoteInOrganization(actor.organizationId, { id }),
       include: { clientProfile: true, property: true, lead: true, lineItems: { orderBy: { sortOrder: "asc" } } }
     }),
-    prisma.costCatalogItem.findMany({ where: { active: true }, orderBy: [{ category: "asc" }, { serviceName: "asc" }] })
+    prisma.costCatalogItem.findMany({ where: costCatalogItemInOrganization(actor.organizationId, { active: true }), orderBy: [{ category: "asc" }, { serviceName: "asc" }] })
   ]);
+  if (!quote) notFound();
 
   return (
     <>
