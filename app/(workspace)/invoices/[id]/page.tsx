@@ -5,17 +5,21 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Button, Panel } from "@/components/ui";
-import { buildMailtoLink } from "@/lib/email";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { flipsideInvoiceWhere } from "@/lib/financial-record-scope";
+import { invoiceCollectionState } from "@/lib/invoice-collections";
+import { notFound } from "next/navigation";
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireStaffPage();
   const { id } = await params;
-  const invoice = await prisma.invoice.findUniqueOrThrow({
-    where: { id },
+  const invoice = await prisma.invoice.findFirst({
+    where: { AND: [{ id }, flipsideInvoiceWhere] },
     include: { job: true, clientProfile: true, payments: { orderBy: { paymentDate: "desc" } } }
   });
+  if (!invoice) notFound();
+  const collection = invoiceCollectionState(invoice);
 
   return (
     <>
@@ -30,7 +34,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         )}
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_280px]">
+      <section id="receipt-review" className={`mb-5 scroll-mt-6 border-l-4 bg-white p-5 ${collection.needsReview ? "border-destructive" : "border-accent"}`}>
+        <div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Next step</p><h2 className="mt-1 text-lg font-semibold">{collection.nextAction}</h2><p className="mt-2 max-w-2xl text-sm text-muted-foreground">{collection.needsReview ? "The recorded amounts or credit balance need review. Compare the receipt evidence before requesting payment." : invoice.status === "DRAFT" ? "Confirm the agreed scope, amount and payment milestone before issuing this draft." : collection.overdue ? `${collection.dueLabel}. Confirm delivery and any outstanding client questions, then choose the appropriate follow-up.` : collection.open ? `${collection.dueLabel}. Record payment only when you have the actual receipt.` : "Review the retained invoice and receipt history below."}</p></div><Link href={collection.needsReview?"/payments/reconciliation":invoice.status==="DRAFT"||(!invoice.dueDate&&collection.open)?`/invoices/${id}/edit`:collection.open?`/payments/new?invoiceId=${id}`:"#payment-history"} className="rounded-md border border-border px-4 py-2 text-sm font-semibold hover:bg-muted">{collection.needsReview?"Reconcile records":invoice.status==="DRAFT"||(!invoice.dueDate&&collection.open)?"Review invoice":collection.open?"Record receipt":"View history"}</Link></div>
+        <dl className="mt-4 grid gap-4 border-t border-border pt-4 sm:grid-cols-3"><div><dt className="text-xs text-muted-foreground">Recorded paid</dt><dd className="mt-1 font-semibold tabular-nums">{money(invoice.amountPaid)}</dd></div><div><dt className="text-xs text-muted-foreground">Completed receipt records</dt><dd className="mt-1 font-semibold tabular-nums">{money(collection.receipts)}</dd></div><div><dt className="text-xs text-muted-foreground">Balance from completed receipts</dt><dd className="mt-1 font-semibold tabular-nums">{money(collection.expectedBalance)}</dd></div></dl>
+      </section>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_280px]">
         <div className="grid gap-5">
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <Panel className="p-5">
@@ -60,7 +68,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
 
           {invoice.payments.length > 0 && (
             <Panel className="overflow-hidden p-0">
-              <div className="border-b border-border px-5 py-3">
+              <div id="payment-history" className="border-b border-border px-5 py-3">
                 <p className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Payment history · {invoice.payments.length}</p>
               </div>
               <table className="w-full text-sm">
@@ -110,10 +118,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           <Panel className="p-4">
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Actions</p>
             <div className="grid gap-2">
+              <Link href={`/invoices/${invoice.id}/edit`} className="block rounded-md border border-border px-3 py-2 text-center text-sm font-semibold hover:bg-muted">Edit invoice</Link>
               <Link href={`/api/pdf/invoice/${invoice.id}`} className="block rounded-md border border-border px-3 py-2 text-center text-sm font-semibold hover:bg-muted">
                 Download PDF
               </Link>
-              {invoice.stripePaymentLink?.startsWith("http") ? (
+              {collection.open && !collection.needsReview && (invoice.stripePaymentLink?.startsWith("http") ? (
                 <Link href={invoice.stripePaymentLink} className="block rounded-md bg-primary px-3 py-2 text-center text-sm font-bold text-primary-foreground hover:opacity-90">
                   Pay now →
                 </Link>
@@ -121,8 +130,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                 <form action={createPaymentLink.bind(null, invoice.id)}>
                   <Button className="w-full" variant="secondary">Generate Stripe link</Button>
                 </form>
-              )}
-              <Link href="/payments/new" className="block rounded-md border border-border px-3 py-2 text-center text-sm font-semibold hover:bg-muted">
+              ))}
+              <Link href={`/payments/new?invoiceId=${invoice.id}`} className="block rounded-md border border-border px-3 py-2 text-center text-sm font-semibold hover:bg-muted">
                 Record payment
               </Link>
               {invoice.status !== "PAID" && (
