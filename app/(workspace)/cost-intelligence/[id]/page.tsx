@@ -33,6 +33,7 @@ export default async function PriceScenarioPage({ params }: { params: Promise<{ 
       </Panel>
       <Panel className="p-5">
         <h2 className="font-semibold">Retained cost assumptions</h2>
+        {snapshot.costSourceVersionId && <Link href={`/cost-intelligence/catalog/${snapshot.costSourceVersionId}?quantity=${encodeURIComponent(String(values.sourceQuantity))}`} className="mt-2 inline-block text-sm text-primary underline">View retained cost source and quantity</Link>}
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{directCostFields.map(([key, label]) => <div className="contents" key={key}><dt>{label}</dt><dd className="text-right">{usd(values[key])}</dd></div>)}</dl>
         <h3 className="mt-5 font-semibold">Cost and risk basis</h3><p className="mt-2 whitespace-pre-wrap text-sm">{snapshot.basis}</p>
         <p className="mt-3 text-sm">Owner field work: {String(values.ownerFieldHours)} hours × {usd(values.ownerFieldRate)}. Project PM: {String(values.projectManagementHours)} hours × {usd(values.projectManagementRate)}.</p>

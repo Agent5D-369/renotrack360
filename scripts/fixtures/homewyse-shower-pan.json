@@ -1,0 +1,189 @@
+{
+  "sourceUrl": "https://www.homewyse.com/services/cost_to_install_shower_pan.html",
+  "slug": "services--cost_to_install_shower_pan",
+  "kind": "INSTALLATION",
+  "name": "Cost to Install a Shower Pan",
+  "categories": [
+    "Stone and Tile"
+  ],
+  "sourceEdition": "May 2026",
+  "effectiveDate": "2026-05-01",
+  "sourceSha256": "140c46d0ef7dd4b94acbe2f8d3ce86d8054ad75195f544b51439c8f9601d2982",
+  "unit": "Pan",
+  "headline": "The basic cost to Install a Shower Pan is $1,536 - $2,967 per pan in May 2026, but can vary significantly with site conditions and options. Use our free HOMEWYSE CALCULATOR to estimate fair costs for your SPECIFIC project. See typical tasks and time to install a shower pan, along with per unit costs and material requirements. See professionally prepared estimates for shower pan installation work. The Homewyse shower pan installation calculator uses industry-standard methods and up-to-date cost data to deliver realistic and unbiased estimates.",
+  "components": [
+    {
+      "index": 0,
+      "name": "Shower Pan Cost",
+      "description": "Non-discounted retail pricing for popular: Tile ready single threshold shower pan with center drain (included). UL listed. 3 yr limited warranty.",
+      "includedByDefault": true,
+      "component": "MATERIAL"
+    },
+    {
+      "index": 1,
+      "name": "Shower Pan Installation Labor, Basic",
+      "description": "Basic labor to install shower pan with favorable site conditions. Secure backing and screed strips. Prepare, apply and level mortar. Remove screed strips. Includes planning, equipment and material acquisition, area preparation and protection, setup and cleanup.",
+      "includedByDefault": true,
+      "component": "LABOR"
+    },
+    {
+      "index": 2,
+      "name": "Shower Pan Installation Job Supplies",
+      "description": "Cost of related materials and supplies typically required to install shower pan including: fabrication and polishing disposables, manufacturer recommended underlayment, fasteners, adhesives and surface sealants.",
+      "includedByDefault": true,
+      "component": "MATERIAL"
+    },
+    {
+      "index": 3,
+      "name": "Shower Pan Installation Equipment Allowance",
+      "description": "Job related costs of specialty equipment used for job quality and efficiency, including: Pneumatic finish nailer, 12\" compound miter saw, circular saw, planer. Daily rental. Consumables extra.",
+      "includedByDefault": true,
+      "component": "EQUIPMENT"
+    },
+    {
+      "index": 6,
+      "name": "Unused Minimum Labor",
+      "description": "Balance of 2 hr(s) minimum labor charge that can be applied to other tasks.",
+      "includedByDefault": false,
+      "component": "LABOR"
+    }
+  ],
+  "model": {
+    "kind": "HOMEWYSE_UC1_V97",
+    "arrays": {
+      "ilp": [
+        0,
+        3.475,
+        0,
+        0,
+        0.0,
+        0,
+        1
+      ],
+      "vmin": [
+        923.182,
+        120.3201,
+        26.4373,
+        90.321,
+        0.0,
+        0.0,
+        120.3201
+      ],
+      "vmax": [
+        2199.5471,
+        145.8425,
+        30.0742,
+        135.4815,
+        0.0,
+        0.0,
+        145.8425
+      ],
+      "vq": [
+        1.0,
+        1,
+        1.0,
+        0,
+        1,
+        1,
+        0
+      ],
+      "fq": [
+        0,
+        0.65,
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "ib": [
+        "",
+        "hr",
+        "",
+        "job",
+        "hr",
+        "",
+        "hr"
+      ]
+    },
+    "minimumLaborHours": 2.0,
+    "quantityRoundingOffset": 0.0,
+    "defaultQuantity": 1.0,
+    "sourceScripts": [
+      "https://www.homewyse.com/hwref/v97_min.js"
+    ]
+  },
+  "sourceOperations": [
+    "Basic labor to install shower pan with favorable site conditions. Secure backing and screed strips. Prepare, apply and level mortar. Remove screed strips. Includes planning, equipment and material acquisition, area preparation and protection, setup and cleanup.",
+    "Balance of 2 hr(s) minimum labor charge that can be applied to other tasks."
+  ],
+  "sourceOptions": {},
+  "sourceCalculation": "",
+  "sourceDescriptions": [],
+  "inclusions": [
+    "Costs for local material / equipment delivery to and service provider transportation to and from the job site.",
+    "Costs to prepare the worksite for Shower Pan Installation, including costs to protect existing structure(s), finishes, materials and components.",
+    "Labor setup time and mobilization time typical of local, small Shower Pan Installation jobs."
+  ],
+  "exclusions": [
+    "Costs for any work or materials not specifically mentioned on this page.",
+    "Costs for removing, relocating, repairing, or modifying existing framing, surface finishes (including molding) and fixtures, HVAC, electrical, and plumbing systems - or bringing any systems into compliance with current building codes.",
+    "Costs for testing and remediation of hazardous materials (asbestos, lead, radon, etc.).",
+    "General contractor overhead and markup for organizing and supervising the Shower Pan Installation. Add 13% to 22% to the total cost above if a general contractor will supervise this project.",
+    "Sales tax on materials and supplies.",
+    "Permit or inspection fees (or portion thereof) required by your local building department for your overall project."
+  ],
+  "notes": [
+    "Homewyse uses the Unit Cost Method for detailed example estimates. These estimates should be used as a starting point for discussion between customers and service providers as they work out the unique requirements and details of their project - to promote clear communication and build mutual trust, agreeable pricing and high satisfaction.",
+    "This example estimate is for BASIC mid-range work performed in readily serviceable conditions by professionals proficient in all work mentioned above, using popular, IN STOCK products, materials and supplies available at home improvement retailers. Your actual costs will vary due to the unique conditions, requirements, labor options and material choices of your project. Work not mentioned on this page, work with schedule difficulty, work during periods of local labor shortages, and work using high-demand pros or master craftsman, premium materials, custom built products, project supervision may result in HIGHER COSTS!",
+    "This example estimate is for educational and illustrative purposes - it is NOT a substitute for written quotes from trade professionals. Homewyse strongly recommends that you contact reputable professionals for itemized assessments of work required and costs for your project - before making any decisions or commitments.",
+    "The example estimate includes:",
+    "The example estimate does NOT include:"
+  ],
+  "references": [
+    {
+      "title": "Product and Supplies Data: Menards Tile, Stone and Supplies",
+      "url": "https://www.menards.com/main/flooring-rugs/tile-stone/c-6546.htm"
+    },
+    {
+      "title": "Product and Supplies Data: Home Depot Tile, Stone and Supplies",
+      "url": "https://www.homedepot.com/b/Flooring-Tile/N-5yc1vZar0y"
+    },
+    {
+      "title": "Product and Supplies Data: Floor and Decor Tile, Stone and Supplies",
+      "url": "https://www.flooranddecor.com/"
+    },
+    {
+      "title": "Product and Supplies Data: Build.com Tile, Stone and Supplies",
+      "url": "https://www.build.com/flooring/c108807"
+    },
+    {
+      "title": "Product and Supplies Data: The HUD PATH Rehab Guide Volume 2: Exterior Walls",
+      "url": "https://www.huduser.gov/portal/publications/destech/walls.html"
+    },
+    {
+      "title": "Labor Wages and Costs: Building a Unit-Price System",
+      "url": "https://www.jlconline.com/business/estimating-job-costing/building-a-unit-price-system_s"
+    },
+    {
+      "title": "Home Improvement 1 2 3",
+      "url": "https://a.co/d/anu44U2"
+    },
+    {
+      "title": "Stone: Designing Kitchens, Baths and Interiors with Natural Stone",
+      "url": "https://a.co/d/gdRqeKD"
+    },
+    {
+      "title": "Occupational Employment and Wage Statistics",
+      "url": "https://www.bls.gov/oes/"
+    },
+    {
+      "title": "Employer Costs for Employee Compensation",
+      "url": "https://www.bls.gov/news.release/ecec.toc.htm"
+    },
+    {
+      "title": "Project Spending Data: Harvard University JCHS Homeowner Expenditures",
+      "url": "https://www.jchs.harvard.edu/iah-2021-expenditures-project-type"
+    }
+  ]
+}

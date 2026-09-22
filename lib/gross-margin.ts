@@ -13,6 +13,7 @@ export const directCostFields = [
 const amount = z.string().trim().regex(/^\d{1,9}(\.\d{1,2})?$/, "Enter a non-negative dollar amount with up to two decimals.");
 const percent = z.string().trim().regex(/^\d{1,3}(\.\d{1,2})?$/, "Enter a percentage with up to two decimals.");
 export const pricingInputSchema = z.object({
+  costSourceVersionId: z.string().default(""), sourceQuantity: amount.default("0"),
   name: z.string().trim().min(3).max(120), basis: z.string().trim().min(10).max(4000),
   subcontractors: amount, materials: amount, fieldLabor: amount,
   ownerFieldHours: amount, ownerFieldRate: amount, projectManagementHours: amount, projectManagementRate: amount,

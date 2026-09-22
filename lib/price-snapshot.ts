@@ -28,8 +28,9 @@ export async function savePriceSnapshot(db: PrismaClient, actorId: string, reque
       if (existing.inputDigest !== inputDigest || existing.createdById !== actorId) throw new PricingError("This request was already used. Reload to save a new scenario.");
       return existing;
     }
+    if (input.costSourceVersionId && !await tx.costSourceVersion.findFirst({ where: { id: input.costSourceVersionId, organizationId: user!.organizationId! }, select: { id: true } })) throw new PricingError("Cost source access denied.");
     const snapshot = await tx.priceSnapshot.create({ data: {
-      organizationId: user!.organizationId!, requestId, inputDigest, createdById: actorId, name: input.name, basis: input.basis,
+      costSourceVersionId: input.costSourceVersionId || null, organizationId: user!.organizationId!, requestId, inputDigest, createdById: actorId, name: input.name, basis: input.basis,
       policyVersion: PRICING_POLICY, inputs: input, ...totals,
       ownerExceptionReason: exception ? input.ownerExceptionReason : null, ownerApprovedById: exception ? actorId : null,
     } });

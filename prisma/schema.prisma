@@ -477,6 +477,7 @@ model WaitlistEntry {
 }
 
 model Organization {
+  costSourceVersions CostSourceVersion[]
   id                 String   @id @default(cuid())
   name               String   @default("RenoTrack360")
   address            String?
@@ -1624,6 +1625,8 @@ model WeeklyReportPublication {
 }
 
 model PriceSnapshot {
+  costSourceVersionId String?
+  costSourceVersion CostSourceVersion? @relation(fields: [costSourceVersionId], references: [id], onDelete: Restrict)
   changeOrders ChangeOrder[]
   id                    String   @id @default(cuid())
   organizationId        String
@@ -2414,4 +2417,28 @@ model AppliedChangeOrder {
  changeOrder ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Restrict)
  snapshot ChangeOrderSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
  @@index([jobId, createdAt])
+}
+
+model CostSourceVersion {
+  id String @id @default(cuid())
+  organizationId String
+  sourceKey String
+  sourceName String
+  sourceUrl String
+  sourceEdition String
+  effectiveDate String?
+  contentDigest String
+  sourceSha256 String
+  name String
+  category String
+  kind String
+  calculatorKind String
+  content Json
+  importedById String
+  importedAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  priceSnapshots PriceSnapshot[]
+  @@unique([organizationId, sourceUrl, contentDigest])
+  @@index([organizationId, kind, category])
+  @@index([organizationId, sourceKey, importedAt])
 }
