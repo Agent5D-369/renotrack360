@@ -11,7 +11,7 @@ async function main() {
   const owner=await db.user.findFirstOrThrow({where:{organizationId:"flipside-org",role:"OWNER",memberships:{some:{role:"OWNER",status:"ACTIVE"}}}});
   const cookie="next-auth.session-token="+await encode({secret:cfg.NEXTAUTH_SECRET,token:{id:owner.id,sub:owner.id,email:owner.email}});
   const get=async(route:string)=>{const r=await fetch(origin+route,{headers:{cookie},redirect:"manual"});assert.equal(r.status,200,route);return r.text();};
-  const html=await get("/invoices");for(const text of ["Invoices &amp; collections","Next actions","Balance aging","Receipt review"])assert.ok(html.includes(text),text);
+  const html=await get("/invoices");for(const text of ["Invoices &amp; collections","Next actions","Balance aging","Needs review"])assert.ok(html.includes(text),text);
   const invoice=await db.invoice.findFirstOrThrow({where:flipsideInvoiceWhere});
   const search=await get("/invoices?q="+encodeURIComponent(invoice.invoiceNumber));assert.ok(search.includes(invoice.invoiceNumber));
   const none=await get("/invoices?q=nonexistent-invoice-collection-fixture");assert.ok(none.includes("No invoices match this view"));

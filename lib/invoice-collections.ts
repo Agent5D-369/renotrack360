@@ -1,5 +1,5 @@
 import { Prisma, type Invoice, type Payment } from "@prisma/client";
-type CollectionInvoice = Pick<Invoice, "id" | "status" | "total" | "amountPaid" | "balanceDue" | "dueDate"> & { payments: Pick<Payment, "status" | "amount">[] };
+type CollectionInvoice = Pick<Invoice, "id" | "status" | "total" | "amountPaid" | "balanceDue" | "dueDate"> & { clientProfileId?: string | null; job?: { clientProfileId?: string | null } | null; payments: Pick<Payment, "status" | "amount">[] };
 export const collectionViews = ["all", "overdue", "upcoming", "review", "drafts", "paid"] as const;
 export type CollectionView = typeof collectionViews[number];
 export function austinDay(now = new Date()) {
@@ -11,16 +11,18 @@ export function invoiceCollectionState(invoice: CollectionInvoice, today = austi
   const receipts = invoice.payments.filter(p => p.status === "COMPLETED").reduce((sum, p) => sum.plus(p.amount), new Prisma.Decimal(0));
   const expectedBalance = invoice.total.minus(receipts);
   const mismatch = !receipts.eq(invoice.amountPaid) || !expectedBalance.eq(invoice.balanceDue);
-  const needsReview = mismatch || invoice.balanceDue.lt(0) || (invoice.status === "PAID" && invoice.balanceDue.gt(0));
+  const clientConflict = Boolean(invoice.clientProfileId && invoice.job?.clientProfileId && invoice.clientProfileId !== invoice.job.clientProfileId);
+  const reviewReason = clientConflict ? "Invoice client and job client differ" : mismatch ? "Recorded amounts do not match completed receipts" : invoice.balanceDue.lt(0) ? "Credit balance needs review" : invoice.status === "PAID" && invoice.balanceDue.gt(0) ? "Paid status conflicts with a remaining balance" : null;
+  const needsReview = reviewReason !== null;
   const open = ["SENT", "PARTIALLY_PAID", "OVERDUE"].includes(invoice.status) && invoice.balanceDue.gt(0);
   const days = invoice.dueDate ? dayNumber(today) - dayNumber(invoice.dueDate.toISOString().slice(0, 10)) : null;
   const overdue = open && days !== null && days > 0;
   const upcoming = open && days !== null && days <= 0 && days >= -7;
   const aging = !open ? null : days === null ? "No due date" : days <= 0 ? "Current" : days <= 30 ? "1–30 days" : days <= 60 ? "31–60 days" : days <= 90 ? "61–90 days" : "90+ days";
   const dueLabel = days === null ? "No due date" : days === 0 ? "Due today" : days > 0 ? `${days} days past due` : `Due in ${-days} days`;
-  const nextAction = needsReview ? "Review receipts" : invoice.status === "DRAFT" ? "Review draft" : overdue ? "Review collection" : open && !invoice.dueDate ? "Set due date" : open ? "Open invoice" : "View record";
+  const nextAction = clientConflict ? "Review client links" : needsReview ? "Review receipts" : invoice.status === "DRAFT" ? "Review draft" : overdue ? "Review collection" : open && !invoice.dueDate ? "Set due date" : open ? "Open invoice" : "View record";
   const priority = needsReview ? 0 : overdue ? 1 : open && !invoice.dueDate ? 2 : upcoming ? 3 : invoice.status === "DRAFT" ? 4 : 5;
-  return { receipts, expectedBalance, mismatch, needsReview, open, overdue, upcoming, aging, days, dueLabel, nextAction, priority };
+  return { receipts, expectedBalance, mismatch, clientConflict, reviewReason, needsReview, open, overdue, upcoming, aging, days, dueLabel, nextAction, priority };
 }
 export function matchesCollectionView(invoice: CollectionInvoice, view: CollectionView, today: string) {
   const state = invoiceCollectionState(invoice, today);

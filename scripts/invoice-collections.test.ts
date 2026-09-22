@@ -24,4 +24,5 @@ test("totals exclude draft, paid and void; receipt discrepancies rank ahead of c
  assert.equal(invoiceCollectionState(fixture("credit","PAID",null,{balanceDue:decimal("-5")}),"2026-09-21").needsReview,true);
  assert.equal(invoiceCollectionState(fixture("bad-paid","PAID"),"2026-09-21").needsReview,true);
  const refunded=fixture("refunded","SENT",null,{payments:[{status:"REFUNDED",amount:decimal("100.25")}]});assert.equal(invoiceCollectionState(refunded).receipts.toFixed(2),"0.00");
+ const conflict=invoiceCollectionState(fixture("wrong-client","SENT",null,{clientProfileId:"client-a",job:{clientProfileId:"client-b"}}));assert.equal(conflict.clientConflict,true);assert.equal(conflict.nextAction,"Review client links");assert.equal(conflict.needsReview,true);
 });
