@@ -527,9 +527,13 @@ export async function deleteInvoice(invoiceId: string) {
 
 export async function deleteChangeOrder(changeOrderId: string) {
   await requireStaff();
-  await prisma.changeOrder.delete({ where: { id: changeOrderId } });
+  const actor = await requireStaff();
+  const { deleteUnissuedChangeDraft } = await import("@/lib/change-order-ledger");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await deleteUnissuedChangeDraft(prisma, actor.id, changeOrderId); }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/change-orders/" + changeOrderId + "?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/change-orders");
-  redirect("/change-orders?flash=Change+order+deleted");
+  redirect("/change-orders?flash=Unissued+draft+deleted");
 }
 
 export async function createJob(formData: FormData) {
@@ -537,6 +541,7 @@ export async function createJob(formData: FormData) {
   const returnTo = String(formData.get("returnTo") || "");
   let parsed: ReturnType<typeof jobSchema.parse>;
   try { parsed = jobSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/jobs/new"); }
+  if (parsed.jobStatus === "DEPOSIT_RECEIVED") redirect("/jobs/new?error=Create+the+job+then+verify+the+documented+deposit+and+receipts");
   const balanceDue = Number(parsed.contractAmount) - Number(parsed.amountPaid);
   const job = await prisma.job.create({
     data: {
@@ -562,20 +567,14 @@ export async function createJob(formData: FormData) {
 
 export async function updateJob(jobId: string, formData: FormData) {
   await requireStaff();
+  const actor = await requireStaff();
   const parsed = jobSchema.parse(nullable(data(formData)));
-  const balanceDue = Number(parsed.contractAmount) - Number(parsed.amountPaid);
-  await prisma.job.update({
-    where: { id: jobId },
-    data: {
-      ...parsed,
-      jobStatus: parsed.jobStatus as Prisma.JobUpdateInput["jobStatus"],
-      riskLevel: parsed.riskLevel as Prisma.JobUpdateInput["riskLevel"],
-      balanceDue
-    }
-  });
-  revalidatePath("/jobs");
-  revalidatePath(`/jobs/${jobId}`);
-  redirect(`/jobs/${jobId}?flash=Changes+saved`);
+  const { saveJobDetails } = await import("@/lib/job-finance");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await saveJobDetails(prisma, actor.id, jobId, parsed); }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/jobs/" + jobId + "/edit?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/jobs", "layout");
+  redirect("/jobs/" + jobId + "?flash=Changes+saved");
 }
 
 export async function updateProperty(propertyId: string, formData: FormData) {
@@ -907,31 +906,25 @@ export async function createPriceScenario(formData: FormData) {
 
 export async function createChangeOrder(formData: FormData) {
   await requireStaff();
-  let parsed: ReturnType<typeof changeOrderSchema.parse>;
-  try { parsed = changeOrderSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/change-orders/new"); }
-  await prisma.changeOrder.create({
-    data: { ...parsed, status: parsed.status as Prisma.ChangeOrderCreateInput["status"] }
-  });
-  if (parsed.status === "APPROVED") {
-    await prisma.job.update({
-      where: { id: parsed.jobId },
-      data: { contractAmount: { increment: parsed.addedCost }, balanceDue: { increment: parsed.addedCost } }
-    });
-  }
+  const actor = await requireStaff();
+  const { saveChangeDraft } = await import("@/lib/change-order-ledger");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  let id: string;
+  try { id = (await saveChangeDraft(prisma, actor.id, String(formData.get("requestId") || ""), null, "", { ...Object.fromEntries(formData), clientRequested: ["on", "true"].includes(String(formData.get("clientRequested"))) })).id; }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/change-orders/new?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/change-orders");
-  redirect("/change-orders?flash=Change+order+created");
+  redirect("/change-orders/" + id + "?flash=Change+draft+saved");
 }
 
 export async function updateChangeOrder(changeOrderId: string, formData: FormData) {
   await requireStaff();
-  const parsed = changeOrderSchema.parse(nullable(data(formData)));
-  await prisma.changeOrder.update({
-    where: { id: changeOrderId },
-    data: { ...parsed, status: parsed.status as Prisma.ChangeOrderUpdateInput["status"] }
-  });
-  revalidatePath("/change-orders");
-  revalidatePath(`/change-orders/${changeOrderId}`);
-  redirect(`/change-orders/${changeOrderId}?flash=Changes+saved`);
+  const actor = await requireStaff();
+  const { saveChangeDraft } = await import("@/lib/change-order-ledger");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await saveChangeDraft(prisma, actor.id, "", changeOrderId, String(formData.get("expectedUpdatedAt") || ""), { ...Object.fromEntries(formData), clientRequested: ["on", "true"].includes(String(formData.get("clientRequested"))) }); }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/change-orders/" + changeOrderId + "/edit?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/change-orders", "layout");
+  redirect("/change-orders/" + changeOrderId + "?flash=Draft+saved+and+old+pending+links+revoked");
 }
 
 export async function createInvoice(formData: FormData) {
@@ -1285,12 +1278,13 @@ export async function updateFeedbackStatus(formData: FormData) {
 
 export async function markJobDepositReceived(jobId: string) {
   await requireStaff();
-  await prisma.job.update({
-    where: { id: jobId },
-    data: { jobStatus: "DEPOSIT_RECEIVED" },
-  });
-  revalidatePath(`/jobs/${jobId}`);
-  redirect(`/jobs/${jobId}?flash=Status+updated+to+Deposit+Received`);
+  const actor = await requireStaff();
+  const { confirmJobDeposit } = await import("@/lib/job-finance");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await confirmJobDeposit(prisma, actor.id, jobId); }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/jobs/" + jobId + "?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/jobs/" + jobId);
+  redirect("/jobs/" + jobId + "?flash=Deposit+receipts+verified");
 }
 
 // ─── Phase 6A: Transactional email ───────────────────────────────────────────
@@ -1392,11 +1386,16 @@ export async function sendChangeOrderApprovalEmail(changeOrderId: string) {
     return;
   }
 
-  const approvalToken = approval?.token;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://renotrack360.com";
-  const approvalLink = approvalToken ? `\n\nApprove or decline online: ${appUrl}/approve/${approvalToken}` : "";
-  const subject = `Change order approval needed - ${co.changeOrderTitle}`;
-  const body = `Hi ${client.profileName},\n\nA change order requires your approval for ${co.job.jobName}.\n\nChange: ${co.changeOrderTitle}\nAdded cost: ${money(co.addedCost)}\nAdded time: ${co.addedTime} day${co.addedTime !== 1 ? "s" : ""}${co.reason ? `\n\nReason: ${co.reason}` : ""}${approvalLink}\n\nBest regards\n${co.job.organization.name}`;
+  const { readChangeApproval, changeOrderDigest } = await import("@/lib/change-order-ledger");
+  if (!approval?.token || co.job.organizationId !== DEFAULT_ORG_ID || client.organizationId !== DEFAULT_ORG_ID) redirect("/change-orders/" + changeOrderId + "?error=Issue+a+reviewed+approval+link+first");
+  let reviewed;
+  try { reviewed = await readChangeApproval(prisma, approval.token); }
+  catch { redirect("/change-orders/" + changeOrderId + "?error=Issue+a+current+reviewed+approval+link"); }
+  if (!["SENT", "VIEWED"].includes(reviewed.approval.status) || reviewed.snapshot.contentDigest !== changeOrderDigest(co)) redirect("/change-orders/" + changeOrderId + "?error=Approval+request+is+not+current");
+  const content = reviewed.content;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://www.renotrack360.com";
+  const subject = "Change order approval needed - " + content.changeOrderTitle;
+  const body = "Hi " + client.profileName + ",\n\nPlease review this change for " + content.jobName + ".\n\n" + content.changeOrderTitle + "\n" + content.reason + "\nContract price change: " + money(content.addedCost) + "\nAdded time: " + content.addedTime + " days\n" + content.scheduleNote + "\n\nApprove or decline the retained version: " + appUrl + "/approve/" + approval.token;
 
   const smtpOrg = await prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { smtpFromName: true, smtpFromEmail: true, smtpPassword: true } });
   const smtpConfig = smtpOrg?.smtpFromEmail && smtpOrg?.smtpPassword ? { fromName: smtpOrg.smtpFromName ?? smtpOrg.smtpFromEmail, fromEmail: smtpOrg.smtpFromEmail, password: smtpOrg.smtpPassword } : null;
@@ -1820,31 +1819,15 @@ export async function generateJobPortalToken(jobId: string) {
   revalidatePath(`/jobs/${jobId}`);
 }
 
-export async function createChangeOrderApproval(changeOrderId: string) {
+export async function createChangeOrderApproval(changeOrderId: string, reviewedDigest: string) {
   await requireStaff();
-  const { randomBytes } = await import("crypto");
-  const existing = await prisma.clientApproval.findFirst({ where: { changeOrderId, status: { notIn: ["DECLINED", "EXPIRED"] } } });
-  if (existing?.token) {
-    revalidatePath(`/change-orders/${changeOrderId}`);
-    return;
-  }
-  const token = randomBytes(32).toString("hex");
-  const co = await prisma.changeOrder.findUniqueOrThrow({
-    where: { id: changeOrderId },
-    select: { clientProfileId: true, job: { select: { clientProfile: { select: { email: true } } } } },
-  });
-  await prisma.clientApproval.create({
-    data: {
-      changeOrderId,
-      approvalType: "CHANGE_ORDER",
-      token,
-      status: "SENT",
-      sentAt: new Date(),
-      signerEmail: co.job?.clientProfile?.email ?? null,
-    },
-  });
-  await prisma.changeOrder.update({ where: { id: changeOrderId }, data: { status: "SENT" } });
-  revalidatePath(`/change-orders/${changeOrderId}`);
+  const actor = await requireStaff();
+  const { issueChangeApproval } = await import("@/lib/change-order-ledger");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await issueChangeApproval(prisma, actor.id, changeOrderId, reviewedDigest); }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/change-orders/" + changeOrderId + "?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/change-orders/" + changeOrderId);
+  redirect("/change-orders/" + changeOrderId + "?flash=Reviewed+approval+link+created");
 }
 
 // ─── Phase 2: scope creep actions ────────────────────────────────────────────
@@ -1873,24 +1856,15 @@ export async function captureOutOfScopeRequest(formData: FormData) {
 
 export async function createChangeOrderFromRequest(activityId: string, jobId: string) {
   await requireStaff();
-  const activity = await prisma.activity.findUniqueOrThrow({ where: { id: activityId } });
-  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, select: { clientProfileId: true } });
-  const count = await prisma.changeOrder.count();
-  const co = await prisma.changeOrder.create({
-    data: {
-      jobId,
-      clientProfileId: job.clientProfileId,
-      changeOrderTitle: activity.subject,
-      reason: activity.body ?? `Client request logged on ${activity.createdAt.toLocaleDateString()}`,
-      status: "DRAFT",
-      clientRequested: true,
-    },
-  });
-  // Mark the activity as completed (linked to a CO)
-  await prisma.activity.update({ where: { id: activityId }, data: { completedAt: new Date() } });
-  revalidatePath(`/jobs/${jobId}/scope`);
+  const actor = await requireStaff();
+  const { changeDraftFromRequest } = await import("@/lib/change-order-ledger");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  let id: string;
+  try { id = (await changeDraftFromRequest(prisma, actor.id, activityId, jobId)).id; }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/jobs/" + jobId + "/scope?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/jobs/" + jobId + "/scope");
   revalidatePath("/change-orders");
-  redirect(`/change-orders/${co.id}?flash=Change+order+created+from+scope+request`);
+  redirect("/change-orders/" + id + "?flash=Scope+request+linked+to+draft");
 }
 
 export async function updatePhaseStatus(formData: FormData) {
@@ -1999,4 +1973,29 @@ export async function createCostObservation(formData: FormData) {
   catch (error) { if (error instanceof CostObservationError) redirect("/cost-intelligence/sources?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/cost-intelligence/sources");
   redirect("/cost-intelligence/sources/" + id);
+}
+
+export async function uploadJobFinanceEvidence(jobId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { createPrivateAsset, storageRoot, MediaError } = await import("@/lib/private-media");
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.type !== "application/pdf") redirect("/jobs/" + jobId + "/financial-review?error=Choose+a+PDF+evidence+bundle");
+  try { await createPrivateAsset(prisma, actor, { entityType: "JOB", entityId: jobId, file, notes: "Financial review evidence; upload alone is not approval." }, await storageRoot()); }
+  catch (error) { if (error instanceof MediaError) redirect("/jobs/" + jobId + "/financial-review?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/jobs/" + jobId + "/financial-review");
+  redirect("/jobs/" + jobId + "/financial-review?flash=Evidence+retained+for+review");
+}
+
+export async function reviewJobFinancialBaseline(jobId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { adoptJobFinancialBaseline } = await import("@/lib/job-finance");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  const { storageRoot, MediaError } = await import("@/lib/private-media");
+  try { await adoptJobFinancialBaseline(prisma, actor.id, jobId, { ...Object.fromEntries(formData), contractVerified: formData.get("contractVerified") === "on", receiptsComplete: formData.get("receiptsComplete") === "on" }, await storageRoot()); }
+  catch (error) { if (error instanceof FinancialRecordError || error instanceof MediaError) redirect("/jobs/" + jobId + "/financial-review?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/jobs", "layout");
+  revalidatePath("/payments/reconciliation");
+  redirect("/jobs/" + jobId + "/financial-review?flash=Reviewed+baseline+retained");
 }

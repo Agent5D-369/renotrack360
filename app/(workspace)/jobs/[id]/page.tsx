@@ -52,6 +52,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   return (
     <>
       <PageHeader title={job.jobName} body="Job execution, order-of-operations phases, financials, reports, change orders, and closeout discipline." actionHref={`/jobs/${job.id}/edit`} actionLabel="Edit job" />
+      <Link href={`/jobs/${job.id}/financial-review`} className="mb-4 inline-block text-sm font-semibold text-primary underline">Review contract and receipt evidence</Link>
       {!receiptTotal.eq(job.amountPaid) && <Panel className="mb-4 border-amber-300 bg-amber-50 p-4"><p className="text-sm font-semibold">Payment reconciliation required</p><p className="mt-1 text-sm">The retained job paid amount differs from its linked completed receipts ({money(receiptTotal)}). Review the underlying receipts before relying on the job balance.</p><Link href="/payments/reconciliation" className="mt-2 inline-block text-sm font-semibold text-primary underline">Review recorded amounts and receipts</Link></Panel>}
       <div className="grid gap-3 md:grid-cols-6">
         <Panel className="p-4"><p className="text-xs font-bold uppercase text-muted-foreground">Contract</p><p className="text-2xl font-bold">{money(job.contractAmount)}</p><p className="mt-1 text-xs text-muted-foreground">Approved quote plus approved change orders.</p></Panel>

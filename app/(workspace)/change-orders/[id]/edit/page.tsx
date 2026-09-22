@@ -1,46 +1,17 @@
 import { requireStaffPage } from "@/lib/staff-access";
-import Link from "next/link";
-import { updateChangeOrder } from "@/app/actions";
-import { EntityForm } from "@/components/entity-form";
+import { ChangeOrderForm } from "@/components/change-order-form";
 import { PageHeader } from "@/components/page-header";
-import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
-
+import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { money } from "@/lib/format";
+import { updateChangeOrder } from "@/app/actions";
 export default async function EditChangeOrderPage({ params }: { params: Promise<{ id: string }> }) {
   await requireStaffPage();
   const { id } = await params;
-  const [order, jobs, profiles] = await Promise.all([
-    prisma.changeOrder.findUniqueOrThrow({ where: { id } }),
-    prisma.job.findMany({ select: { id: true, jobName: true }, orderBy: { jobName: "asc" } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } })
-  ]);
-  const saveChangeOrder = updateChangeOrder.bind(null, order.id);
-
-  return (
-    <>
-      <PageHeader title={`Edit: ${order.changeOrderTitle}`} body="Update scope, cost impact, time impact, field conditions, and approval status." />
-      <div className="mb-5">
-        <Link href={`/change-orders/${id}`} className="text-sm font-semibold text-muted-foreground hover:text-foreground">
-          ← Back to change order
-        </Link>
-      </div>
-      <EntityForm
-        formKey="changeOrder"
-        action={saveChangeOrder}
-        submitLabel="Save change order"
-        fields={[
-          { name: "jobId", label: "Job", type: "select", options: relationOptions(jobs.map((j) => ({ id: j.id, label: j.jobName }))), defaultValue: order.jobId },
-          { name: "clientProfileId", label: "Client", type: "select", options: relationOptions(profiles.map((p) => ({ id: p.id, label: p.profileName }))), defaultValue: order.clientProfileId ?? "" },
-          { name: "changeOrderTitle", label: "Title", defaultValue: order.changeOrderTitle },
-          { name: "status", label: "Status", type: "select", options: options.changeOrderStatuses, defaultValue: order.status },
-          { name: "clientRequested", label: "Client requested", type: "checkbox", defaultValue: order.clientRequested },
-          { name: "addedCost", label: "Added cost", type: "number", defaultValue: Number(order.addedCost) },
-          { name: "addedTime", label: "Added days", type: "number", defaultValue: Number(order.addedTime) },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: order.reason ?? "" },
-          { name: "fieldCondition", label: "Field condition", type: "textarea", defaultValue: order.fieldCondition ?? "" },
-          { name: "signatureApprovalNotes", label: "Signature / approval notes", type: "textarea", defaultValue: order.signatureApprovalNotes ?? "" }
-        ]}
-      />
-    </>
-  );
+  const [order, jobs, profiles, prices] = await Promise.all([
+    prisma.changeOrder.findFirstOrThrow({ where: { id, job: { organizationId: DEFAULT_ORG_ID } } }), prisma.job.findMany({ where: { organizationId: DEFAULT_ORG_ID }, select: { id: true, jobName: true, clientProfileId: true }, orderBy: { jobName: "asc" } }),
+prisma.profile.findMany({ where: { organizationId: DEFAULT_ORG_ID }, select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+prisma.priceSnapshot.findMany({ where: { organizationId: DEFAULT_ORG_ID }, orderBy: { createdAt: "desc" } })]);
+  return <><PageHeader title={"Edit: " + order.changeOrderTitle} body="Revising a draft revokes its pending approval links." />
+    <ChangeOrderForm action={updateChangeOrder.bind(null, id)} order={order} jobs={jobs} profiles={profiles} prices={prices.map(p => ({ id: p.id, name: p.name, label: money(p.sellingPrice) }))} /></>;
 }

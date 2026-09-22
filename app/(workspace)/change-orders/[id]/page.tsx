@@ -6,6 +6,8 @@ import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { LinkButton, Panel } from "@/components/ui";
 import { buildMailtoLink } from "@/lib/email";
+import { changeOrderDigest } from "@/lib/change-order-ledger";
+import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { buildSmsLink } from "@/lib/sms";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
@@ -14,15 +16,18 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
   await requireStaffPage();
   const { id } = await params;
   const [order, latestApproval] = await Promise.all([
-    prisma.changeOrder.findUniqueOrThrow({
-      where: { id },
-      include: { job: true, clientProfile: true },
+    prisma.changeOrder.findFirstOrThrow({
+      where: { id, job: { organizationId: DEFAULT_ORG_ID } },
+      include: { job: { include: { financialBaseline: true } }, clientProfile: true },
     }),
     prisma.clientApproval.findFirst({
-      where: { changeOrderId: id },
+      where: { changeOrderId: id, snapshot: { organizationId: DEFAULT_ORG_ID } },
+      include: { snapshot: true },
       orderBy: { createdAt: "desc" },
     }),
   ]);
+
+  const activeApproval = latestApproval?.token && latestApproval.snapshot && ["SENT", "VIEWED"].includes(latestApproval.status) && latestApproval.snapshot.expiresAt > new Date() && latestApproval.snapshot.contentDigest === changeOrderDigest(order) ? latestApproval : null;
 
   return (
     <>
@@ -100,17 +105,19 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
           <Panel className="p-4">
             <p className="mb-3 text-xs font-bold uppercase tracking-wide text-muted-foreground">Actions</p>
             <div className="grid gap-2">
-              {/* Digital approval link */}
-              {latestApproval?.token ? (
+              <Link href={"/change-orders/" + order.id + "/edit"} className="text-sm text-primary underline">Review or edit draft</Link>
+              {!order.job.financialBaseline && <Link href={"/jobs/" + order.jobId + "/financial-review"} className="text-sm text-primary underline">Complete owner financial review before issuing</Link>}
+              {latestApproval && !activeApproval && <p className="text-xs text-muted-foreground">Previous request: {latestApproval.status}. Only a current reviewed link can accept a new response.</p>}
+              {activeApproval ? (
                 <div className="rounded-md border border-green-200 bg-green-50 p-3">
                   <p className="text-xs font-bold text-green-700">Approval link active</p>
                   <p className="mt-1 text-xs text-green-600">
-                    Status: <strong>{latestApproval.status}</strong>
-                    {latestApproval.signerName && ` · Signed by ${latestApproval.signerName}`}
+                    Status: <strong>{activeApproval.status}</strong>
+                    {activeApproval.signerName && ` · Signed by ${activeApproval.signerName}`}
                   </p>
                   <div className="mt-2 flex gap-2">
                     <Link
-                      href={`/approve/${latestApproval.token}`}
+                      href={`/approve/${activeApproval.token}`}
                       target="_blank"
                       className="text-xs font-semibold text-green-700 hover:underline"
                     >
@@ -119,7 +126,7 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
                   </div>
                   {order.clientProfile?.phone && (
                     <a
-                      href={buildSmsLink(order.clientProfile.phone, `Hi ${order.clientProfile.profileName}, please review and approve this change order for ${order.job.jobName}: ${process.env.NEXT_PUBLIC_APP_URL ?? "https://renotrack360.com"}/approve/${latestApproval.token}`)}
+                      href={buildSmsLink(order.clientProfile.phone, `Hi ${order.clientProfile.profileName}, please review and approve this change order for ${order.job.jobName}: ${process.env.NEXT_PUBLIC_APP_URL ?? "https://renotrack360.com"}/approve/${activeApproval.token}`)}
                       className="mt-2 block rounded-md bg-green-700 px-3 py-2 text-center text-xs font-bold text-white hover:bg-green-800"
                     >
                       📱 Text approval link to client
@@ -128,9 +135,9 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
                 </div>
               ) : (
                 ["DRAFT", "SENT"].includes(order.status) && (
-                  <form action={createChangeOrderApproval.bind(null, order.id)}>
+                  <form action={createChangeOrderApproval.bind(null, order.id, changeOrderDigest(order))}>
                     <button type="submit" className="w-full rounded-md border border-primary/30 bg-primary/5 px-3 py-2 text-sm font-semibold text-primary hover:bg-primary/10">
-                      Generate approval link
+                      Issue reviewed scope and price
                     </button>
                   </form>
                 )
@@ -149,11 +156,8 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
                   </ConfirmSubmitButton>
                 </form>
               )}
-              {order.clientProfile?.email && (
-                <a href={buildMailtoLink(order.clientProfile.email, `Change order approval needed - ${order.changeOrderTitle}`, `Hi ${order.clientProfile.profileName},\n\nA change order requires your approval for ${order.job.jobName}.\n\nChange: ${order.changeOrderTitle}\nAdded cost: $${Number(order.addedCost).toLocaleString()}\nAdded time: ${order.addedTime} day${order.addedTime !== 1 ? "s" : ""}\n${order.reason ? `\nReason: ${order.reason}` : ""}\n\nPlease reply to approve or schedule a call to discuss.\n\nBest regards`)}
-                  className="block rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm font-semibold text-amber-800 hover:bg-amber-100">
-                  ✉ Request approval by email
-                </a>
+              {activeApproval && order.clientProfile?.email && (
+                <a href={buildMailtoLink(order.clientProfile.email, "Change order review - " + order.changeOrderTitle, "Please review the retained scope, price and time impact: " + (process.env.NEXT_PUBLIC_APP_URL ?? "https://www.renotrack360.com") + "/approve/" + activeApproval.token)} className="text-sm text-primary underline">Email reviewed approval link</a>
               )}
             </div>
           </Panel>

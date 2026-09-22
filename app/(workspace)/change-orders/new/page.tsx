@@ -1,50 +1,18 @@
 import { requireStaffPage } from "@/lib/staff-access";
-import { createChangeOrder } from "@/app/actions";
-import { EntityForm } from "@/components/entity-form";
+import { ChangeOrderForm } from "@/components/change-order-form";
 import { PageHeader } from "@/components/page-header";
-import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
-
-export default async function NewChangeOrderPage({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string>>;
-}) {
+import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { money } from "@/lib/format";
+import { createChangeOrder } from "@/app/actions";
+export default async function NewChangeOrderPage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
   await requireStaffPage();
   const sp = await searchParams;
-  const preJobId = sp.jobId ?? "";
-  const preReason = sp.reason ? decodeURIComponent(sp.reason) : "";
-  const preTitle = sp.title ? decodeURIComponent(sp.title) : "";
-  const preClientRequested = sp.clientRequested === "true";
-
-  const [jobs, profiles] = await Promise.all([
-    prisma.job.findMany({ select: { id: true, jobName: true, clientProfileId: true }, orderBy: { jobName: "asc" } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } })
-  ]);
-
-  // Auto-select client from the pre-selected job
-  const preJob = preJobId ? jobs.find((j) => j.id === preJobId) : null;
-  const preClientId = preJob?.clientProfileId ?? "";
-
-  return (
-    <>
-      <PageHeader title="New change order" body="Document scope changes, field conditions, cost impact, time impact, and approval status." />
-      <EntityForm
-        formKey="changeOrder"
-        action={createChangeOrder}
-        fields={[
-          { name: "jobId", label: "Job", type: "select", options: relationOptions(jobs.map((j) => ({ id: j.id, label: j.jobName }))), defaultValue: preJobId },
-          { name: "clientProfileId", label: "Client", type: "select", options: relationOptions(profiles.map((p) => ({ id: p.id, label: p.profileName }))), defaultValue: preClientId },
-          { name: "changeOrderTitle", label: "Title", defaultValue: preTitle },
-          { name: "status", label: "Status", type: "select", options: options.changeOrderStatuses, defaultValue: "DRAFT" },
-          { name: "clientRequested", label: "Client requested", type: "checkbox", defaultValue: preClientRequested },
-          { name: "addedCost", label: "Added cost", type: "number", defaultValue: 0 },
-          { name: "addedTime", label: "Added days", type: "number", defaultValue: 0 },
-          { name: "reason", label: "Reason", type: "textarea", defaultValue: preReason },
-          { name: "fieldCondition", label: "Field condition", type: "textarea" },
-          { name: "signatureApprovalNotes", label: "Signature / approval notes", type: "textarea" }
-        ]}
-      />
-    </>
-  );
+  const [jobs, profiles, prices] = await Promise.all([prisma.job.findMany({ where: { organizationId: DEFAULT_ORG_ID }, select: { id: true, jobName: true, clientProfileId: true }, orderBy: { jobName: "asc" } }),
+prisma.profile.findMany({ where: { organizationId: DEFAULT_ORG_ID }, select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+prisma.priceSnapshot.findMany({ where: { organizationId: DEFAULT_ORG_ID }, orderBy: { createdAt: "desc" } })]);
+  const job = jobs.find(j => j.id === sp.jobId);
+  return <><PageHeader title="New change order" body="Document the scope and price for review before approval." />
+    <ChangeOrderForm action={createChangeOrder} jobs={jobs} profiles={profiles} prices={prices.map(p => ({ id: p.id, name: p.name, label: money(p.sellingPrice) }))}
+      defaults={{ jobId: job?.id, clientProfileId: job?.clientProfileId ?? "", title: sp.title ?? "", reason: sp.reason ?? "", clientRequested: sp.clientRequested === "true" }} /></>;
 }

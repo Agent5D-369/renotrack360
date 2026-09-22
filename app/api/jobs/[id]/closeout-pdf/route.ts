@@ -3,6 +3,7 @@ import { staffApiDenial } from "@/lib/staff-access";
 ﻿import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { money } from "@/lib/format";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -10,8 +11,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
   if (denied) return denied;
   try {
     const { id } = await params;
-    const job = await prisma.job.findUniqueOrThrow({
-      where: { id },
+    const job = await prisma.job.findFirstOrThrow({
+      where: { id, organizationId: DEFAULT_ORG_ID },
       include: {
         phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: true } },
         weeklyReports: { orderBy: { weekEnding: "asc" } },
@@ -20,6 +21,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         clientProfile: true,
         property: true,
         organization: true,
+        financialBaseline: true,
       },
     });
 
@@ -40,7 +42,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     }).join("\n");
 
     const changeOrderSummary = job.changeOrders.length
-      ? job.changeOrders.map((co) => `${co.changeOrderTitle}: +${money(co.addedCost)} (${co.status.toLowerCase()})`).join("\n")
+      ? job.changeOrders.map((co) => `${co.changeOrderTitle}: ${money(co.addedCost)} (${co.status.toLowerCase()})`).join("\n")
       : "No change orders on this job.";
 
     const reportSummary = job.weeklyReports.length
@@ -53,10 +55,11 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
 
     const totalContract = Number(job.contractAmount);
     const totalChangeOrders = job.changeOrders
-      .filter((co) => co.status === "APPROVED")
+      .filter((co) => ["APPROVED", "COMPLETED"].includes(co.status))
       .reduce((sum, co) => sum + Number(co.addedCost), 0);
 
     const warnings: string[] = [];
+    if (!job.financialBaseline) warnings.push("Financial history has not completed owner review. Recorded figures are not a reconciled final statement.");
     if (openChangeOrders.length > 0) warnings.push(`${openChangeOrders.length} change order(s) still unsigned`);
     if (totalBalance > 0) warnings.push(`Outstanding balance: ${money(totalBalance)}`);
     if (phasesDone < job.phases.length) warnings.push(`${job.phases.length - phasesDone} phase(s) not marked complete`);
@@ -70,7 +73,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         ...(warnings.length ? [{ heading: "Open items at time of export", body: warnings.join("\n") }] : []),
         {
           heading: "Project summary",
-          body: `Contract amount: ${money(totalContract)}\nApproved change orders: +${money(totalChangeOrders)}\nTotal project value: ${money(totalContract + totalChangeOrders)}\nFinal balance due: ${money(totalBalance)}`,
+          body: `Contract amount: ${money(totalContract)}\nApproved changes (informational; not added again): ${money(totalChangeOrders)}\nTotal project value: ${money(totalContract)}\nOutstanding invoiced balance: ${money(totalBalance)}`,
         },
         { heading: "Phase completion", body: phaseStatuses },
         { heading: "Change orders", body: changeOrderSummary },
@@ -78,10 +81,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         { heading: "Invoice record", body: invoiceSummary },
       ],
       totals: [
-        { label: "Contract amount", value: totalContract },
-        { label: "Approved change orders", value: totalChangeOrders },
-        { label: "Total project value", value: totalContract + totalChangeOrders },
-        { label: "Balance due", value: totalBalance },
+        { label: "Total project value", value: totalContract },
+        { label: "Outstanding invoiced balance", value: totalBalance },
       ],
       terms: org.weeklyReportFooter,
       brand: {
@@ -100,6 +101,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     return new NextResponse(new Uint8Array(pdf), {
       headers: {
         "Content-Type": "application/pdf",
+        "Cache-Control": "private, no-store",
         "Content-Disposition": `attachment; filename="closeout-${slug}.pdf"`,
       },
     });

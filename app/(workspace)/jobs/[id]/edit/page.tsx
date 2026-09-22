@@ -9,7 +9,7 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
   await requireStaffPage();
   const { id } = await params;
   const [job, profiles, properties, quotes, phases] = await Promise.all([
-    prisma.job.findUniqueOrThrow({ where: { id } }),
+    prisma.job.findUniqueOrThrow({ where: { id }, include: { financialBaseline: true } }),
     prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
     prisma.property.findMany({ select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
     prisma.quote.findMany({ select: { id: true, quoteName: true }, orderBy: { quoteName: "asc" } }),
@@ -20,6 +20,7 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
   return (
     <>
       <PageHeader title={`Edit ${job.jobName}`} body="Update job status, dates, contract value, payments received, active phase, permit status, risk, and operating notes." />
+      {job.financialBaseline && <p className="mb-4 text-sm">Financial totals are managed by the reviewed contract and payment ledger.</p>}
       <EntityForm
         formKey="job"
         action={saveJob}
@@ -32,8 +33,8 @@ export default async function EditJobPage({ params }: { params: Promise<{ id: st
           { name: "jobStatus", label: "Status", type: "select", options: options.jobStatuses, defaultValue: job.jobStatus },
           { name: "startDate", label: "Start date", type: "date", defaultValue: job.startDate?.toISOString().slice(0, 10) },
           { name: "targetCompletion", label: "Target completion", type: "date", defaultValue: job.targetCompletion?.toISOString().slice(0, 10) },
-          { name: "contractAmount", label: "Contract amount", type: "number", defaultValue: Number(job.contractAmount) },
-          { name: "amountPaid", label: "Amount paid", type: "number", defaultValue: Number(job.amountPaid) },
+          { name: "contractAmount", label: "Contract amount", type: job.financialBaseline ? "hidden" : "number", defaultValue: Number(job.contractAmount) },
+          { name: "amountPaid", label: "Amount paid", type: job.financialBaseline ? "hidden" : "number", defaultValue: Number(job.amountPaid) },
           { name: "activePhase", label: "Active phase override", type: "select", defaultValue: job.activePhase ?? "", options: [{ label: "Auto-detect (first incomplete phase)", value: "" }, ...phases.map((p) => ({ label: `${String(p.phaseNumber).padStart(2, "0")}. ${p.phaseName}`, value: p.phaseName }))], helpText: "Optional override. Leave blank to auto-detect from phase task completion." },
           { name: "weeklyReportDue", label: "Weekly report due", type: "date", defaultValue: job.weeklyReportDue?.toISOString().slice(0, 10) },
           { name: "permitStatus", label: "Permit status", defaultValue: job.permitStatus },

@@ -1,9 +1,10 @@
 import { Prisma, PrismaClient, InvoiceStatus, PaymentMethod, PaymentStatus } from "@prisma/client";
 import { createHash } from "node:crypto";
 import { z } from "zod";
-import { hasStaffAccess } from "./staff-policy";
+import { financeActor, FinancialRecordError as PaymentLedgerError } from "./finance-lock";
+import { verifyReviewedJob, syncReviewedJobReceipts } from "./job-finance";
+export { FinancialRecordError as PaymentLedgerError } from "./finance-lock";
 
-export class PaymentLedgerError extends Error {}
 const dollars = z.string().trim().regex(/^(0|[1-9]\d{0,8})(\.\d{1,2})?$/, "Use a nonnegative dollar amount with at most two decimals.");
 const optionalText = z.string().trim().max(3000).default("");
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value => {
@@ -14,15 +15,6 @@ export const ledgerPaymentSchema = z.object({
   paymentDate: day, method: z.nativeEnum(PaymentMethod), status: z.nativeEnum(PaymentStatus), stripePaymentIntentId: optionalText, notes: optionalText,
 });
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
-async function staffAndLock(tx: Prisma.TransactionClient, actorId: string) {
-  const user = await tx.user.findUnique({ where: { id: actorId }, include: { memberships: true } });
-  const member = user?.memberships.find(value => value.organizationId === user.organizationId);
-  if (!hasStaffAccess(user, member ?? null)) throw new PaymentLedgerError("Staff access denied.");
-  const organizationId = user!.organizationId!;
-  // One small-business finance lock covers cross-invoice moves and competing invoice edits.
-  await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${organizationId + ":invoice-ledger"}, 0))::text`;
-  return organizationId;
-}
 async function ownedInvoice(tx: Prisma.TransactionClient, id: string, organizationId: string) {
   const invoice = await tx.invoice.findUnique({ where: { id }, include: { job: true, clientProfile: true } });
   if (!invoice || (!invoice.job && !invoice.clientProfile) || (invoice.job && invoice.job.organizationId !== organizationId) || (invoice.clientProfile && invoice.clientProfile.organizationId !== organizationId)) throw new PaymentLedgerError("Invoice access denied or ownership unresolved.");
@@ -54,7 +46,7 @@ export async function recordPayment(db: PrismaClient, actorId: string, requestId
   const input = parsed.data;
   const inputDigest = createHash("sha256").update(JSON.stringify({ paymentId, expectedUpdatedAt, input })).digest("hex");
   return db.$transaction(async tx => {
-    const organizationId = await staffAndLock(tx, actorId);
+    const organizationId = await financeActor(tx, actorId);
     const retry = await tx.paymentRevision.findUnique({ where: { organizationId_requestId: { organizationId, requestId } } });
     if (retry) {
       if (retry.inputDigest !== inputDigest || retry.actorId !== actorId) throw new PaymentLedgerError("This request was already used. Reload the payment form.");
@@ -67,6 +59,8 @@ export async function recordPayment(db: PrismaClient, actorId: string, requestId
     const beforeInvoices = [];
     for (const id of invoiceIds) { const invoice = await ownedInvoice(tx, id, organizationId); await verifyInvoiceLedger(tx, invoice); beforeInvoices.push(invoice); }
     const invoice = beforeInvoices.find(value => value.id === input.invoiceId)!;
+    const jobIds = [...new Set(beforeInvoices.flatMap(value => value.jobId ? [value.jobId] : []))];
+    for (const jobId of jobIds) await verifyReviewedJob(tx, jobId);
     if (invoice.status === "VOID" && input.status === "COMPLETED") throw new PaymentLedgerError("A void invoice cannot receive a completed payment.");
     const clientId = input.clientProfileId || invoice.clientProfileId || invoice.job?.clientProfileId || null;
     if (clientId) {
@@ -81,6 +75,7 @@ export async function recordPayment(db: PrismaClient, actorId: string, requestId
     const payment = old ? await tx.payment.update({ where: { id: old.id }, data }) : await tx.payment.create({ data });
     const afterInvoices = [];
     for (const id of invoiceIds) afterInvoices.push(await reconcileInvoice(tx, id));
+    for (const jobId of jobIds) await syncReviewedJobReceipts(tx, jobId);
     const revision = await tx.paymentRevision.create({ data: { organizationId, paymentId: payment.id, requestId, inputDigest, actorId,
       before: old ? json({ payment: old, invoices: beforeInvoices.map(({ job, clientProfile, ...value }) => value) }) : json({ payment: null, invoices: beforeInvoices.map(({ job, clientProfile, ...value }) => value) }),
       after: json({ payment, invoices: afterInvoices }) } });
@@ -98,7 +93,7 @@ export async function saveInvoiceWithLedger(db: PrismaClient, actorId: string, i
   const input = parsed.data;
   if (!new Prisma.Decimal(input.subtotal).plus(input.tax).eq(input.total)) throw new PaymentLedgerError("Invoice total must equal subtotal plus tax.");
   return db.$transaction(async tx => {
-    const organizationId = await staffAndLock(tx, actorId);
+    const organizationId = await financeActor(tx, actorId);
     const before = invoiceId ? await ownedInvoice(tx, invoiceId, organizationId) : null;
     if (before) {
       if (before.updatedAt.toISOString() !== expectedUpdatedAt) throw new PaymentLedgerError("The invoice changed. Reload before editing it.");

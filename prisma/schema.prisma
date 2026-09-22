@@ -512,6 +512,9 @@ model Organization {
   workItemVersions   WorkItemVersion[]
   costObservations   CostObservation[]
   paymentRevisions   PaymentRevision[]
+  jobFinancialBaselines JobFinancialBaseline[]
+  changeOrderSnapshots ChangeOrderSnapshot[]
+  appliedChangeOrders AppliedChangeOrder[]
   costAssemblies     CostAssembly[]
   marketCostFactors  MarketCostFactor[]
   laborRates         LaborRate[]
@@ -1097,6 +1100,9 @@ model Job {
   clientProfile    Profile?    @relation(fields: [clientProfileId], references: [id])
   property         Property?   @relation(fields: [propertyId], references: [id])
   approvedQuote    Quote?      @relation(fields: [approvedQuoteId], references: [id])
+  financialBaseline JobFinancialBaseline?
+  changeSnapshots ChangeOrderSnapshot[]
+  appliedChanges AppliedChangeOrder[]
   phases           RenovationPhase[]
   tasks            Task[]
   weeklyReports    WeeklyReport[]
@@ -1618,6 +1624,7 @@ model WeeklyReportPublication {
 }
 
 model PriceSnapshot {
+  changeOrders ChangeOrder[]
   id                    String   @id @default(cuid())
   organizationId        String
   requestId             String
@@ -1643,6 +1650,14 @@ model PriceSnapshot {
 }
 
 model ChangeOrder {
+  priceSnapshotId String?
+  priceSnapshot PriceSnapshot? @relation(fields: [priceSnapshotId], references: [id], onDelete: Restrict)
+  creationRequestId String? @unique
+  creationDigest String?
+  sourceActivityId String? @unique
+  sourceActivity Activity? @relation(fields: [sourceActivityId], references: [id], onDelete: Restrict)
+  snapshots ChangeOrderSnapshot[]
+  appliedChange AppliedChangeOrder?
   id                     String            @id @default(cuid())
   jobId                  String
   clientProfileId        String?
@@ -1818,6 +1833,7 @@ model Financing {
 }
 
 model Activity {
+  generatedChangeOrder ChangeOrder?
   id                String       @id @default(cuid())
   relatedProfileId  String?
   relatedLeadId     String?
@@ -1842,6 +1858,7 @@ model Activity {
 }
 
 model FileAsset {
+  financialBaselines JobFinancialBaseline[]
   id              String         @id @default(cuid())
   entityType      FileEntityType
   entityId        String
@@ -1977,6 +1994,7 @@ model RequiredEvidence {
 }
 
 model ClientApproval {
+  snapshot ChangeOrderSnapshot?
   id            String         @id @default(cuid())
   estimateId    String?
   changeOrderId String?
@@ -2338,4 +2356,62 @@ model PaymentRevision {
 
  @@unique([organizationId, requestId])
  @@index([paymentId, createdAt])
+}
+
+model JobFinancialBaseline {
+ id String @id @default(cuid())
+ organizationId String
+ jobId String @unique
+ requestId String
+ inputDigest String
+ sourceFileId String
+ sourceSha256 String
+ contractAmount Decimal @db.Decimal(12,2)
+ reviewedPaidAmount Decimal @db.Decimal(12,2)
+ requiredDeposit Decimal @db.Decimal(12,2)
+ legacyApprovedChanges Json
+ before Json
+ reviewReason String @db.Text
+ reviewedById String
+ createdAt DateTime @default(now())
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ job Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+ sourceFile FileAsset @relation(fields: [sourceFileId], references: [id], onDelete: Restrict)
+ @@unique([organizationId, requestId])
+}
+
+model ChangeOrderSnapshot {
+ id String @id @default(cuid())
+ organizationId String
+ jobId String
+ changeOrderId String
+ approvalId String @unique
+ contentDigest String
+ content Json
+ expiresAt DateTime
+ createdById String
+ createdAt DateTime @default(now())
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ job Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+ changeOrder ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Restrict)
+ approval ClientApproval @relation(fields: [approvalId], references: [id], onDelete: Restrict)
+ appliedChange AppliedChangeOrder?
+ @@index([changeOrderId, createdAt])
+}
+
+model AppliedChangeOrder {
+ id String @id @default(cuid())
+ organizationId String
+ jobId String
+ changeOrderId String @unique
+ snapshotId String @unique
+ amount Decimal @db.Decimal(12,2)
+ addedDays Int
+ signerName String
+ createdAt DateTime @default(now())
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ job Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+ changeOrder ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Restrict)
+ snapshot ChangeOrderSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+ @@index([jobId, createdAt])
 }

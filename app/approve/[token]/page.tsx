@@ -19,6 +19,9 @@ interface ApprovalData {
   orgTagline?: string | null;
   jobName?: string;
   alreadyActed: boolean;
+  reviewedDigest: string;
+  expiresAt: string;
+  scheduleNote: string;
 }
 
 function BrandBar({ data, docLabel }: { data: { orgName?: string; orgLogoUrl?: string | null; orgBrandColor?: string | null; orgTagline?: string | null }; docLabel: string }) {
@@ -58,25 +61,28 @@ export default function ApprovePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [signerName, setSignerName] = useState("");
+  const [reviewed, setReviewed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<"approved" | "declined" | null>(null);
 
   // Fetch approval details on mount
   useEffect(() => {
     fetch(`/api/approve/${token}`)
-      .then((r) => r.json())
+      .then(async (r) => { const value = await r.json(); if (!r.ok) throw new Error(value.error ?? "Approval unavailable."); return value; })
       .then((d) => { setData(d); setLoading(false); })
-      .catch(() => { setError("Could not load this approval request."); setLoading(false); });
+      .catch((error: Error) => { setError(error.message); setLoading(false); });
   }, [token]);
 
   async function submit(decision: "approved" | "declined") {
     if (!signerName.trim()) { setError("Please enter your name to proceed."); return; }
+    if (!reviewed) { setError("Confirm that you reviewed this scope and price before responding."); return; }
     setSubmitting(true);
     setError("");
+    try {
     const res = await fetch(`/api/approve/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision, signerName }),
+      body: JSON.stringify({ decision, signerName, reviewed, reviewedDigest: data?.reviewedDigest }),
     });
     if (res.ok) {
       setResult(decision);
@@ -84,7 +90,9 @@ export default function ApprovePage() {
       const d = await res.json();
       setError(d.error ?? "Something went wrong. Please try again.");
     }
-    setSubmitting(false);
+    } catch {
+      setError("The response could not be confirmed. Please try again; a recorded response will not be applied twice.");
+    } finally { setSubmitting(false); }
   }
 
   if (loading) {
@@ -119,7 +127,7 @@ export default function ApprovePage() {
           </p>
           <p className="mt-2 text-sm text-muted-foreground">
             {wasApproved
-              ? "Your approval has been recorded. Your contractor will proceed with the agreed scope."
+              ? "Your approval has been retained with this scope and price. Flipside will confirm the work schedule."
               : "Your response has been recorded. Your contractor will be in touch to discuss next steps."}
           </p>
           {data.orgName && (
@@ -146,11 +154,11 @@ export default function ApprovePage() {
           {data.changeOrderTitle && (
             <>
               <h2 className="mt-2 text-xl font-black text-[#0f172a]">{data.changeOrderTitle}</h2>
-              {data.addedCost !== undefined && data.addedCost > 0 && (
+              {data.addedCost !== undefined && (
                 <div className="mt-3 flex items-center gap-3">
                   <div className="rounded-lg bg-amber-50 px-4 py-2">
-                    <p className="text-xs text-amber-700">Added cost</p>
-                    <p className="text-xl font-black text-amber-900">+${data.addedCost.toLocaleString()}</p>
+                    <p className="text-xs text-amber-700">Contract price change</p>
+                    <p className="text-xl font-black text-amber-900">{data.addedCost.toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
                   </div>
                   {data.addedTime !== undefined && data.addedTime > 0 && (
                     <div className="rounded-lg bg-slate-100 px-4 py-2">
@@ -182,7 +190,7 @@ export default function ApprovePage() {
         {/* Signature form */}
         <div className="rounded-xl border border-border bg-white p-5">
           <label className="mb-2 block text-sm font-bold">
-            Your full name (serves as your electronic signature)
+            Your full name for this response
           </label>
           <input
             type="text"
@@ -192,6 +200,9 @@ export default function ApprovePage() {
             className="h-11 w-full rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-[#183d29]"
           />
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} className="mt-1" />I reviewed the scope, price change and time impact shown above.</label>
+          <p className="mt-3 text-xs text-muted-foreground">{data.scheduleNote}</p>
+          <p className="mt-2 text-xs text-muted-foreground">Link expires {new Date(data.expiresAt).toLocaleDateString()}.</p>
           <p className="mt-3 text-xs text-muted-foreground">
             By clicking Approve below, you confirm your agreement to the scope and cost described above.
             This constitutes your electronic approval.
