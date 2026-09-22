@@ -1,8 +1,10 @@
 ﻿import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { saasSalesEnabled } from "@/lib/flipside-brand";
 
 // Public endpoint - returns anonymized aggregate stats for the benchmark report
 export async function GET() {
+  if (!saasSalesEnabled()) return NextResponse.json({ error: "Software benchmarking is paused." }, { status: 410 });
   try {
     const entries = await prisma.waitlistEntry.findMany({
       where: { calcLeakTotal: { not: null } },

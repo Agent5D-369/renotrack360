@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://www.renotrack360.com"),
-  robots: { index: true, follow: true },
+  robots: { index: false, follow: false },
 };
 
 export default function MarketingLayout({ children }: { children: React.ReactNode }) {

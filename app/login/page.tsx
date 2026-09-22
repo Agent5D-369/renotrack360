@@ -2,6 +2,8 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/login-form";
 import { authOptions } from "@/lib/auth";
+import Image from "next/image";
+import { FLIPSIDE_LOGO, FLIPSIDE_NAME } from "@/lib/flipside-brand";
 
 export default async function LoginPage() {
   const session = await getServerSession(authOptions);
@@ -12,15 +14,13 @@ export default async function LoginPage() {
   const showDemo = false;
 
   return (
-    <main className="grid min-h-screen place-items-center bg-[#16231f] px-5">
+    <main className="grid min-h-screen place-items-center bg-[#171717] px-5 py-8">
       <section className="w-full max-w-md rounded-lg bg-white p-8 shadow-soft">
         <div className="mb-8">
-          <div className="mb-4 grid h-12 w-12 place-items-center rounded-md bg-[#183d29] font-black text-white text-lg">
-            R
-          </div>
-          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">RenoTrack360 Command Center</p>
+          <Image src={FLIPSIDE_LOGO} alt={FLIPSIDE_NAME} width={805} height={639} priority className="mb-5 h-auto w-40" />
+          <p className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Flipside Command Center</p>
           <h1 className="mt-1 text-2xl font-bold">Sign in</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Renovation operations from lead to closeout.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Austin renovation operations, from first conversation to final walkthrough.</p>
         </div>
 
         <LoginForm googleEnabled={!!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)} />

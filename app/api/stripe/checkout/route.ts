@@ -5,10 +5,12 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { createCheckoutSession, type PlanKey } from "@/lib/stripe";
 import { prisma } from "@/lib/prisma";
+import { saasSalesEnabled } from "@/lib/flipside-brand";
 
 export async function POST(request: Request) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  if (!saasSalesEnabled()) return NextResponse.json({ error: "Standalone software subscriptions are paused." }, { status: 410 });
   const session = await getServerSession(authOptions);
   if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 

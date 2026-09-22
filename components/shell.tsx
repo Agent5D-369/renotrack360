@@ -1,5 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import Image from "next/image";
+import { FLIPSIDE_LOGO, FLIPSIDE_NAME } from "@/lib/flipside-brand";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NavigationProgressIsland } from "@/components/navigation-progress-island";
@@ -20,7 +22,7 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
     })
   ]);
 
-  const sidebarBg = org?.brandColor ?? "#183d29";
+  const sidebarBg = "#171717";
   const brandHsl = org?.brandColor ? hexToHsl(org.brandColor) : null;
   const secondaryHsl = org?.brandSecondaryColor ? hexToHsl(org.brandSecondaryColor) : null;
   const cssVars = {
@@ -38,21 +40,9 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
       {/* Desktop sidebar */}
       <aside className="hidden border-r border-border text-white lg:block lg:min-h-screen" style={{ backgroundColor: sidebarBg }}>
         {/* Logo / brand */}
-        <div className="flex h-16 items-center gap-3 border-b border-white/10 px-4">
-          {org?.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={org.logoUrl} alt={org.name ?? "Logo"} className="h-8 max-w-[140px] shrink-0 object-contain" />
-          ) : (
-            <>
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-white/20 font-black text-sm text-white">
-                {(org?.name ?? "RT").slice(0, 2).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold leading-tight">{org?.name ?? "RenoTrack360"}</p>
-                <p className="text-xs text-white/50">Command Center</p>
-              </div>
-            </>
-          )}
+        <div className="flex min-h-24 items-center gap-3 border-b border-white/10 px-4 py-3">
+          <Image src={FLIPSIDE_LOGO} alt={FLIPSIDE_NAME} width={805} height={639} className="h-auto w-20 shrink-0" />
+          <div className="min-w-0"><p className="text-sm font-bold leading-tight">{FLIPSIDE_NAME}</p><p className="mt-1 text-xs text-white/70">Command Center</p></div>
         </div>
 
         {/* Navigation */}
@@ -72,7 +62,7 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
         {/* Top header bar */}
         <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-sm md:px-5">
           <p className="text-sm text-muted-foreground">
-            {org?.companyTagline ?? "Renovation operations from lead to closeout"}
+            Flipside Renovations · Austin
           </p>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/guided" className="hidden text-muted-foreground hover:text-foreground md:block">

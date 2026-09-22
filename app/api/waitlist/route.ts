@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { createHash } from "crypto";
+import { saasSalesEnabled } from "@/lib/flipside-brand";
 
 const calcDataSchema = z.object({
   scopeLeak: z.number(),
@@ -35,6 +36,7 @@ const schema = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  if (!saasSalesEnabled()) return NextResponse.json({ error: "Software waitlist enrollment is paused." }, { status: 410 });
   try {
     const body = await req.json();
     const data = schema.parse(body);

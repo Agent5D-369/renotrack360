@@ -7,28 +7,28 @@ const CANONICAL_ORIGIN = "https://www.renotrack360.com";
 
 export const metadata: Metadata = {
   title: {
-    default: "RenoTrack360 — Renovation Operations Command Center",
-    template: "%s — RenoTrack360"
+    default: "Flipside Renovations | Command Center",
+    template: "%s | Flipside Renovations"
   },
-  description: "Lead-to-closeout renovation operating system for residential contractors. Estimates, change orders, invoices, client portal, and profit dashboard — all in one place.",
+  description: "Private project operations for Flipside Renovations in Austin.",
   metadataBase: new URL(CANONICAL_ORIGIN),
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
-    siteName: "RenoTrack360",
+    siteName: "Flipside Renovations",
     url: CANONICAL_ORIGIN,
-    title: "RenoTrack360 — Renovation Operations Command Center",
-    description: "Lead-to-closeout renovation operating system for residential contractors."
+    title: "Flipside Renovations | Command Center",
+    description: "Private project operations for Flipside Renovations in Austin."
   },
   twitter: {
     card: "summary_large_image",
-    title: "RenoTrack360 — Renovation Operations Command Center",
-    description: "Lead-to-closeout renovation operating system for residential contractors."
+    title: "Flipside Renovations | Command Center",
+    description: "Private project operations for Flipside Renovations in Austin."
   },
   robots: {
-    index: true,
-    follow: true,
-    googleBot: { index: true, follow: true }
+    index: false,
+    follow: false,
+    googleBot: { index: false, follow: false }
   }
 };
 
@@ -45,3 +45,4 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     </html>
   );
 }
+

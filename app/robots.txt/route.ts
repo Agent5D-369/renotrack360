@@ -1,22 +1,4 @@
 import { NextResponse } from "next/server";
-
 export function GET() {
-  return new NextResponse(
-    `User-agent: *
-Allow: /
-Disallow: /api/
-Disallow: /home
-Disallow: /leads
-Disallow: /jobs
-Disallow: /quotes
-Disallow: /estimates
-Disallow: /invoices
-Disallow: /profiles
-Disallow: /properties
-Disallow: /settings
-
-Sitemap: https://www.renotrack360.com/sitemap.xml
-`,
-    { headers: { "Content-Type": "text/plain" } }
-  );
+  return new NextResponse("User-agent: *\nDisallow: /\n", { headers: { "Content-Type": "text/plain", "Cache-Control": "public, max-age=3600" } });
 }

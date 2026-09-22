@@ -63,10 +63,10 @@ export function LoginForm({ googleEnabled }: { googleEnabled?: boolean }) {
 
       <form onSubmit={form.handleSubmit(onSubmit)} className="grid gap-4">
         <Field label="Email" name="email" error={form.formState.errors.email?.message}>
-          <input className="h-10 rounded-md border border-border px-3 text-sm" {...form.register("email")} />
+          <input id="email" autoComplete="username" className="h-10 rounded-md border border-border px-3 text-sm" {...form.register("email")} />
         </Field>
         <Field label="Password" name="password" error={form.formState.errors.password?.message}>
-          <input className="h-10 rounded-md border border-border px-3 text-sm" type="password" {...form.register("password")} />
+          <input id="password" autoComplete="current-password" className="h-10 rounded-md border border-border px-3 text-sm" type="password" {...form.register("password")} />
         </Field>
         {error ? <p className="text-sm font-medium text-destructive">{error}</p> : null}
         <Button>Sign in</Button>
