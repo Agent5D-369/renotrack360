@@ -4,12 +4,14 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { flipsideInvoiceWhere } from "@/lib/financial-record-scope";
 
 export default async function NewInvoicePage() {
   await requireStaffPage();
   const [jobs, profiles] = await Promise.all([
-    prisma.job.findMany({ select: { id: true, jobName: true } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true } })
+    prisma.job.findMany({ where: { organizationId: DEFAULT_ORG_ID }, select: { id: true, jobName: true } }),
+    prisma.profile.findMany({ where: { organizationId: DEFAULT_ORG_ID }, select: { id: true, profileName: true } })
   ]);
   return (
     <>
@@ -25,7 +27,6 @@ export default async function NewInvoicePage() {
           { name: "subtotal", label: "Subtotal", type: "number", defaultValue: 0 },
           { name: "tax", label: "Tax", type: "number", defaultValue: 0 },
           { name: "total", label: "Total", type: "number", defaultValue: 0 },
-          { name: "amountPaid", label: "Amount paid", type: "number", defaultValue: 0 },
           { name: "status", label: "Status", type: "select", options: options.invoiceStatuses, defaultValue: "DRAFT" },
           { name: "notes", label: "Notes", type: "textarea" }
         ]}

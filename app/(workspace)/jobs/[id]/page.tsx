@@ -22,7 +22,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     include: {
       phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: { include: { assignedToProfile: true }, orderBy: { dueDate: "asc" } } } },
       tasks: { include: { phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" } },
-      invoices: { orderBy: { dueDate: "desc" } },
+      invoices: { orderBy: { dueDate: "desc" }, include: { payments: { where: { status: "COMPLETED" }, select: { amount: true } } } },
       changeOrders: { orderBy: { createdAt: "desc" } },
       weeklyReports: { orderBy: { weekEnding: "desc" } },
       selectionSheets: { include: { items: true } },
@@ -48,9 +48,11 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
     return { ...phase, computedStatus };
   });
   const computedActivePhase = phaseSnapshots.find((phase) => phase.computedStatus !== "COMPLETE") ?? phaseSnapshots.at(-1);
+  const receiptTotal = job.invoices.reduce((sum, invoice) => invoice.payments.reduce((value, payment) => value.plus(payment.amount), sum), job.amountPaid.minus(job.amountPaid));
   return (
     <>
       <PageHeader title={job.jobName} body="Job execution, order-of-operations phases, financials, reports, change orders, and closeout discipline." actionHref={`/jobs/${job.id}/edit`} actionLabel="Edit job" />
+      {!receiptTotal.eq(job.amountPaid) && <Panel className="mb-4 border-amber-300 bg-amber-50 p-4"><p className="text-sm font-semibold">Payment reconciliation required</p><p className="mt-1 text-sm">The retained job paid amount differs from its linked completed receipts ({money(receiptTotal)}). Review the underlying receipts before relying on the job balance.</p><Link href="/payments/reconciliation" className="mt-2 inline-block text-sm font-semibold text-primary underline">Review recorded amounts and receipts</Link></Panel>}
       <div className="grid gap-3 md:grid-cols-6">
         <Panel className="p-4"><p className="text-xs font-bold uppercase text-muted-foreground">Contract</p><p className="text-2xl font-bold">{money(job.contractAmount)}</p><p className="mt-1 text-xs text-muted-foreground">Approved quote plus approved change orders.</p></Panel>
         <Panel className="p-4"><p className="text-xs font-bold uppercase text-muted-foreground">Paid</p><p className="text-2xl font-bold">{money(job.amountPaid)}</p><p className="mt-1 text-xs text-muted-foreground">Recorded job payments/invoice receipts.</p></Panel>

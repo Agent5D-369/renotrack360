@@ -5,13 +5,14 @@ import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { flipsidePaymentWhere } from "@/lib/financial-record-scope";
 
 export default async function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireStaffPage();
   const { id } = await params;
-  const payment = await prisma.payment.findUniqueOrThrow({
-    where: { id },
-    include: { invoice: { include: { job: true } }, clientProfile: true }
+  const payment = await prisma.payment.findFirstOrThrow({
+    where: { id, ...flipsidePaymentWhere },
+    include: { invoice: { include: { job: true } }, clientProfile: true, revisions: { orderBy: { createdAt: "desc" }, take: 20 } }
   });
 
   return (
@@ -49,6 +50,10 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{payment.notes}</p>
             </Panel>
           )}
+          <Panel className="p-5"><h3 className="font-semibold">Retained payment history</h3>{payment.revisions.length ? <ol className="mt-3 space-y-3 text-sm">{payment.revisions.map(revision => {
+            const snapshot = revision.after as { payment?: { amount?: string; status?: string; invoiceId?: string; notes?: string } };
+            return <li key={revision.id} className="border-t border-border pt-3"><p>{revision.createdAt.toISOString().replace("T", " ").slice(0, 19)} UTC · {money(snapshot.payment?.amount ?? 0)} · {snapshot.payment?.status}</p><p className="mt-1 whitespace-pre-wrap text-muted-foreground">{snapshot.payment?.notes}</p></li>;
+          })}</ol> : <p className="mt-2 text-sm text-muted-foreground">Legacy payment. No retained revision was recorded before this ledger was introduced.</p>}</Panel>
         </div>
 
         <div className="grid gap-4 self-start">

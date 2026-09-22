@@ -936,72 +936,50 @@ export async function updateChangeOrder(changeOrderId: string, formData: FormDat
 
 export async function createInvoice(formData: FormData) {
   await requireStaff();
-  let parsed: ReturnType<typeof invoiceSchema.parse>;
-  try { parsed = invoiceSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/invoices/new"); }
-  await prisma.invoice.create({
-    data: {
-      ...parsed,
-      balanceDue: Number(parsed.total) - Number(parsed.amountPaid),
-      status: parsed.status as Prisma.InvoiceCreateInput["status"]
-    }
-  });
+  const actor = await requireStaff();
+  const { saveInvoiceWithLedger, PaymentLedgerError } = await import("@/lib/payment-ledger");
+  try { await saveInvoiceWithLedger(prisma, actor.id, null, "", Object.fromEntries(formData)); }
+  catch (error) { if (error instanceof PaymentLedgerError) redirect("/invoices/new?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/invoices");
   redirect("/invoices?flash=Invoice+created");
 }
 
 export async function updateInvoice(invoiceId: string, formData: FormData) {
   await requireStaff();
-  const parsed = invoiceSchema.parse(nullable(data(formData)));
-  await prisma.invoice.update({
-    where: { id: invoiceId },
-    data: {
-      ...parsed,
-      status: parsed.status as Prisma.InvoiceUpdateInput["status"],
-      balanceDue: Number(parsed.total) - Number(parsed.amountPaid)
-    }
-  });
+  const actor = await requireStaff();
+  const { saveInvoiceWithLedger, PaymentLedgerError } = await import("@/lib/payment-ledger");
+  try { await saveInvoiceWithLedger(prisma, actor.id, invoiceId, String(formData.get("expectedUpdatedAt") || ""), Object.fromEntries(formData)); }
+  catch (error) { if (error instanceof PaymentLedgerError) redirect("/invoices/" + invoiceId + "/edit?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/invoices");
-  revalidatePath(`/invoices/${invoiceId}`);
-  redirect(`/invoices/${invoiceId}?flash=Changes+saved`);
+  revalidatePath("/payments/reconciliation");
+  revalidatePath("/invoices/" + invoiceId);
+  redirect("/invoices/" + invoiceId + "?flash=Changes+saved");
 }
 
 export async function createPayment(formData: FormData) {
   await requireStaff();
-  const parsed = paymentSchema.parse(nullable(data(formData)));
-  await prisma.payment.create({
-    data: {
-      ...parsed,
-      method: parsed.method as Prisma.PaymentCreateInput["method"],
-      status: parsed.status as Prisma.PaymentCreateInput["status"]
-    }
-  });
-  await prisma.invoice.update({
-    where: { id: parsed.invoiceId },
-    data: {
-      amountPaid: { increment: parsed.amount },
-      balanceDue: { decrement: parsed.amount }
-    }
-  });
+  const actor = await requireStaff();
+  const { recordPayment, PaymentLedgerError } = await import("@/lib/payment-ledger");
+  let id: string;
+  try { id = (await recordPayment(prisma, actor.id, String(formData.get("requestId") || ""), null, "", Object.fromEntries(formData))).id; }
+  catch (error) { if (error instanceof PaymentLedgerError) redirect("/payments/new?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/payments");
-  revalidatePath("/invoices");
-  redirect("/payments?flash=Payment+recorded");
+  revalidatePath("/payments/reconciliation");
+  revalidatePath("/invoices", "layout");
+  redirect("/payments/" + id + "?flash=Payment+recorded");
 }
 
 export async function updatePayment(paymentId: string, formData: FormData) {
   await requireStaff();
-  const parsed = paymentSchema.parse(nullable(data(formData)));
-  await prisma.payment.update({
-    where: { id: paymentId },
-    data: {
-      ...parsed,
-      method: parsed.method as Prisma.PaymentUpdateInput["method"],
-      status: parsed.status as Prisma.PaymentUpdateInput["status"]
-    }
-  });
+  const actor = await requireStaff();
+  const { recordPayment, PaymentLedgerError } = await import("@/lib/payment-ledger");
+  try { await recordPayment(prisma, actor.id, String(formData.get("requestId") || ""), paymentId, String(formData.get("expectedUpdatedAt") || ""), Object.fromEntries(formData)); }
+  catch (error) { if (error instanceof PaymentLedgerError) redirect("/payments/" + paymentId + "/edit?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath("/payments");
-  revalidatePath(`/payments/${paymentId}`);
-  revalidatePath("/invoices");
-  redirect(`/payments/${paymentId}?flash=Changes+saved`);
+  revalidatePath("/payments/reconciliation");
+  revalidatePath("/payments/" + paymentId);
+  revalidatePath("/invoices", "layout");
+  redirect("/payments/" + paymentId + "?flash=Changes+saved");
 }
 
 export async function createFinancing(formData: FormData) {

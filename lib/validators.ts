@@ -196,7 +196,7 @@ export const invoiceSchema = z.object({
   subtotal: z.coerce.number().min(0),
   tax: z.coerce.number().min(0),
   total: z.coerce.number().min(0),
-  amountPaid: z.coerce.number().min(0),
+  amountPaid: z.coerce.number().min(0).default(0),
   status: z.string().min(1),
   notes: optionalText
 });

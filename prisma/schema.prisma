@@ -511,6 +511,7 @@ model Organization {
   priceSnapshots     PriceSnapshot[]
   workItemVersions   WorkItemVersion[]
   costObservations   CostObservation[]
+  paymentRevisions   PaymentRevision[]
   costAssemblies     CostAssembly[]
   marketCostFactors  MarketCostFactor[]
   laborRates         LaborRate[]
@@ -1792,6 +1793,7 @@ model Payment {
   status                PaymentStatus @default(COMPLETED)
   notes                 String?       @db.Text
   invoice               Invoice       @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  revisions             PaymentRevision[]
   clientProfile         Profile?      @relation(fields: [clientProfileId], references: [id])
   createdAt             DateTime      @default(now())
   updatedAt             DateTime      @updatedAt
@@ -2319,4 +2321,21 @@ model CostObservation {
 
  @@unique([organizationId, requestId])
  @@index([organizationId, component, effectiveDate])
+}
+
+model PaymentRevision {
+ id String @id @default(cuid())
+ organizationId String
+ paymentId String
+ requestId String
+ inputDigest String
+ actorId String
+ before Json?
+ after Json
+ createdAt DateTime @default(now())
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+ payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+ @@unique([organizationId, requestId])
+ @@index([paymentId, createdAt])
 }
