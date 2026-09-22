@@ -23,6 +23,7 @@ export default async function CostIntelligencePage() {
         <h2 className="font-semibold">Gross-margin pricing scenarios</h2>
         <p className="mt-1 text-sm text-muted-foreground">Calculate risk-adjusted direct costs at Flipside's target margin and retain the assumptions. Existing estimates and the cost records below keep their recorded values.</p>
         <Link href="/cost-intelligence/scenarios" className="mt-3 inline-block font-semibold text-primary hover:underline">Open pricing scenarios →</Link>
+        <Link href="/cost-intelligence/sources" className="ml-5 mt-3 inline-block font-semibold text-primary hover:underline">Dated cost sources →</Link>
       </Panel>
       <div className="grid gap-4 md:grid-cols-4">
         <Panel className="p-4"><p className="text-xs font-bold uppercase text-muted-foreground">Assemblies</p><p className="text-3xl font-bold">{assemblies.length}</p></Panel>

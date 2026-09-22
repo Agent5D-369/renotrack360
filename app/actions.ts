@@ -2011,3 +2011,14 @@ export async function adoptWorkItemPilot(formData: FormData) {
   revalidatePath("/service-templates/work-items");
   redirect("/service-templates/work-items/" + id);
 }
+
+export async function createCostObservation(formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { saveCostObservation, CostObservationError } = await import("@/lib/cost-observation");
+  let id: string;
+  try { id = (await saveCostObservation(prisma, actor.id, String(formData.get("requestId") || ""), Object.fromEntries(formData))).id; }
+  catch (error) { if (error instanceof CostObservationError) redirect("/cost-intelligence/sources?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/cost-intelligence/sources");
+  redirect("/cost-intelligence/sources/" + id);
+}

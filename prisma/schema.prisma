@@ -510,6 +510,7 @@ model Organization {
   costCatalogItems   CostCatalogItem[]
   priceSnapshots     PriceSnapshot[]
   workItemVersions   WorkItemVersion[]
+  costObservations   CostObservation[]
   costAssemblies     CostAssembly[]
   marketCostFactors  MarketCostFactor[]
   laborRates         LaborRate[]
@@ -2294,4 +2295,28 @@ model WorkItemVersion {
   @@unique([organizationId, templateCode, revision])
   @@unique([organizationId, templateCode, contentDigest])
   @@index([organizationId, createdAt])
+}
+
+model CostObservation {
+ id String @id @default(cuid())
+ organizationId String
+ requestId String
+ inputDigest String
+ name String
+ layer String
+ component String
+ measure String
+ geography String
+ effectiveDate String
+ reviewDate String
+ low Decimal @db.Decimal(16,4)
+ target Decimal? @db.Decimal(16,4)
+ high Decimal @db.Decimal(16,4)
+ content Json
+ createdById String
+ importedAt DateTime @default(now())
+ organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+ @@unique([organizationId, requestId])
+ @@index([organizationId, component, effectiveDate])
 }
