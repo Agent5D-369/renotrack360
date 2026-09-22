@@ -5,6 +5,7 @@ import { financeActor, FinancialRecordError } from "./finance-lock";
 import { readPrivateAsset } from "./private-media";
 import { DEFAULT_ORG_ID } from "./constants";
 import { jobSchema } from "./validators";
+import { nativeAcceptedContract } from "./estimate-acceptance";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 export async function jobFinanceReviewData(db: Prisma.TransactionClient | PrismaClient, jobId: string, organizationId: string) {
@@ -45,6 +46,8 @@ export async function adoptJobFinancialBaseline(db: PrismaClient, actorId: strin
     const review = await jobFinanceReviewData(tx, jobId, organizationId);
     if (review.job.financialBaseline) throw new FinancialRecordError("This job already has a retained baseline. Use a reviewed change rather than replacing it.");
     if (review.digest !== input.reviewedDigest) throw new FinancialRecordError("The financial records changed. Reload and review the current values.");
+    const accepted = await nativeAcceptedContract(tx, jobId);
+    if (accepted && (!review.job.contractAmount.eq(accepted.total) || !new Prisma.Decimal(input.requiredDeposit).eq(accepted.requiredDeposit))) throw new FinancialRecordError("The contract and deposit must match the retained client acceptance. Use a reviewed change for subsequent adjustments.");
     if (review.job.contractAmount.lte(0) || new Prisma.Decimal(input.requiredDeposit).gt(review.job.contractAmount)) throw new FinancialRecordError("Verify a positive current contract amount and a deposit no greater than the contract.");
     for (const invoice of review.job.invoices) {
       const paid = invoice.payments.filter(payment => payment.status === "COMPLETED").reduce((sum, payment) => sum.plus(payment.amount), new Prisma.Decimal(0));
@@ -97,8 +100,10 @@ export async function saveJobDetails(db: PrismaClient, actorId: string, jobId: s
     const job = await tx.job.findFirst({ where: { id: jobId, organizationId } });
     if (!job) throw new FinancialRecordError("Job access denied.");
     const reviewed = await verifyReviewedJob(tx, jobId);
+    const accepted = await nativeAcceptedContract(tx, jobId);
+    if (accepted && !reviewed && !new Prisma.Decimal(accepted.total).eq(input.contractAmount)) throw new FinancialRecordError("The contract amount comes from the retained client acceptance. Use a reviewed change after financial adoption.");
     if (reviewed && (!reviewed.contract.eq(input.contractAmount) || !reviewed.paid.eq(input.amountPaid))) throw new FinancialRecordError("Reviewed financial totals come from approved changes and completed receipts. Reload this page; do not overwrite them here.");
-    if (reviewed && ["clientProfileId", "propertyId", "approvedQuoteId"].some(key => (input[key as keyof typeof input] || null) !== job[key as "clientProfileId" | "propertyId" | "approvedQuoteId"])) throw new FinancialRecordError("A reviewed contract cannot be reassigned to another client, property or quote.");
+    if ((reviewed || accepted) && ["clientProfileId", "propertyId", "approvedQuoteId"].some(key => (input[key as keyof typeof input] || null) !== job[key as "clientProfileId" | "propertyId" | "approvedQuoteId"])) throw new FinancialRecordError("A reviewed contract cannot be reassigned to another client, property or quote.");
     if (!reviewed && (!job.contractAmount.eq(input.contractAmount) || !job.amountPaid.eq(input.amountPaid))) await financeActor(tx, actorId, true);
     if (input.jobStatus === "DEPOSIT_RECEIVED" && job.jobStatus !== "DEPOSIT_RECEIVED") throw new FinancialRecordError("Use the deposit verification action so the documented requirement and receipts are checked.");
     for (const [id, entity] of [[input.clientProfileId, "profile"], [input.propertyId, "property"], [input.approvedQuoteId, "quote"]] as const) {

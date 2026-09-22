@@ -740,30 +740,11 @@ export async function deployProjectTaskTemplate(formData: FormData) {
 
 export async function convertQuoteToJob(quoteId: string) {
   await requireStaff();
-  const quote = await prisma.quote.findUniqueOrThrow({
-    where: { id: quoteId },
-    include: { property: true, clientProfile: true }
-  });
-  const amount = Number(quote.finalQuoteAmount ?? quote.totalTarget);
-  const job = await prisma.job.create({
-    data: {
-      organizationId: DEFAULT_ORG_ID,
-      jobName: quote.quoteName.replace(/quote/i, "Job"),
-      clientProfileId: quote.clientProfileId,
-      propertyId: quote.propertyId,
-      approvedQuoteId: quote.id,
-      contractAmount: amount,
-      balanceDue: amount,
-      activePhase: renovationPhases[0],
-      phases: {
-        create: renovationPhaseDetails.map(([phaseName, description], index) => ({ phaseNumber: index + 1, phaseName, clientUpdate: description }))
-      }
-    }
-  });
-  await prisma.quote.update({ where: { id: quoteId }, data: { quoteStatus: "CONVERTED_TO_JOB" } });
-  revalidatePath("/quotes");
-  revalidatePath("/jobs");
-  redirect(`/jobs/${job.id}`);
+  const existing = await prisma.job.findFirst({ where: { approvedQuoteId: quoteId, organizationId: DEFAULT_ORG_ID }, select: { id: true } });
+  if (existing) redirect(`/jobs/${existing.id}`);
+  const estimate = await prisma.estimate.findFirst({ where: { quoteId, quote: { organizationId: DEFAULT_ORG_ID }, acceptance: { isNot: null } }, select: { id: true } });
+  if (!estimate) redirect(`/quotes/${quoteId}?error=Issue+a+reviewed+estimate+and+retain+client+acceptance+before+creating+the+job`);
+  await convertReviewedEstimate(estimate.id);
 }
 
 export async function createEstimateFromQuote(quoteId: string) {
@@ -2043,4 +2024,39 @@ export async function uploadWorkPackageEvidence(packageId: string, formData: For
     await createPrivateAsset(prisma, actor, { entityType: "JOB", entityId: work.scopeItem.jobId, file, notes: "Work package evidence upload; link it to its actual step before review." }, await storageRoot());
   } catch (error) { if (error instanceof FinancialRecordError || error instanceof MediaError) redirect(`/work-packages/${packageId}?error=` + encodeURIComponent(error.message)); throw error; }
   revalidatePath(`/work-packages/${packageId}`); redirect(`/work-packages/${packageId}?flash=Private+file+retained.+Assign+it+to+the+correct+step`);
+}
+
+export async function uploadEstimateContract(estimateId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { ownedEstimate } = await import("@/lib/estimate-acceptance");
+  const { createPrivateAsset, storageRoot, MediaError } = await import("@/lib/private-media");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try {
+    const estimate = await ownedEstimate(prisma, estimateId), file = formData.get("file");
+    if (!(file instanceof File)) throw new MediaError("Choose the reviewed proposal PDF.");
+    const asset = await createPrivateAsset(prisma, actor, { entityType: "QUOTE", entityId: estimate.quoteId, file, notes: "Proposal document; owner review and link issuance are separate actions." }, await storageRoot());
+    if (asset.mimeType !== "application/pdf") throw new MediaError("The proposal requires a PDF. This file remains a private attachment only.");
+  } catch (error) { if (error instanceof MediaError || error instanceof FinancialRecordError) redirect(`/estimates/${estimateId}/acceptance?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath(`/estimates/${estimateId}/acceptance`); redirect(`/estimates/${estimateId}/acceptance?flash=Private+proposal+document+retained`);
+}
+export async function issueReviewedEstimate(estimateId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { issueEstimateApproval } = await import("@/lib/estimate-acceptance");
+  const { storageRoot, MediaError } = await import("@/lib/private-media");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await issueEstimateApproval(prisma, actor.id, estimateId, { ...Object.fromEntries(formData), ownerReviewed: formData.get("ownerReviewed") === "on" }, await storageRoot()); }
+  catch (error) { if (error instanceof MediaError || error instanceof FinancialRecordError) redirect(`/estimates/${estimateId}/acceptance?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath(`/estimates/${estimateId}/acceptance`); revalidatePath(`/estimates/${estimateId}`); redirect(`/estimates/${estimateId}/acceptance?flash=Reviewed+link+created.+No+message+was+sent`);
+}
+export async function convertReviewedEstimate(estimateId: string) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { convertAcceptedEstimate } = await import("@/lib/estimate-acceptance");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  let id: string;
+  try { id = (await convertAcceptedEstimate(prisma, actor.id, estimateId)).id; }
+  catch (error) { if (error instanceof FinancialRecordError) redirect(`/estimates/${estimateId}/acceptance?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/jobs"); revalidatePath("/estimates"); redirect(`/jobs/${id}/financial-review?flash=Accepted+proposal+linked.+Review+documents+and+receipts+before+execution`);
 }

@@ -32,6 +32,7 @@ export default async function EstimateDetailPage({ params }: { params: Promise<{
   return (
     <>
       <PageHeader title={estimate.estimateNumber} body="Estimate readiness, confidence, client tracking, and follow-up assistance." actionHref={`/estimates/${estimate.id}/edit`} actionLabel="Edit estimate" />
+      <Panel className="mb-5 p-4"><h2 className="font-semibold">Reviewed contract and client acceptance</h2><p className="mt-1 text-sm">Bind the exact client-facing scope, complete document and retained gross-margin price before requesting acceptance or creating a job.</p><Link className="mt-3 inline-block font-semibold text-primary underline" href={`/estimates/${estimate.id}/acceptance`}>Review and issue proposal →</Link></Panel>
       <div className="grid gap-4 md:grid-cols-3">
         <Panel className="p-4"><p className="text-xs font-bold uppercase text-muted-foreground">Total</p><p className="text-2xl font-bold">{money(estimate.total)}</p></Panel>
         <Panel className="p-4"><p className="text-xs font-bold uppercase text-muted-foreground">Status</p><div className="mt-2"><StatusPill value={estimate.status} /></div></Panel>

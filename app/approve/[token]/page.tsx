@@ -13,6 +13,17 @@ interface ApprovalData {
   reason?: string;
   estimateNumber?: string;
   total?: number;
+  title?: string;
+  clientName?: string;
+  address?: string;
+  scope?: string;
+  exclusions?: string;
+  allowances?: string;
+  schedule?: string;
+  paymentSchedule?: string;
+  warranty?: string;
+  requiredDeposit?: string;
+  documentUrl?: string;
   orgName?: string;
   orgLogoUrl?: string | null;
   orgBrandColor?: string | null;
@@ -181,13 +192,14 @@ export default function ApprovePage() {
             <>
               <h2 className="mt-2 text-xl font-black text-[#0f172a]">Estimate {data.estimateNumber}</h2>
               {data.total !== undefined && (
-                <p className="mt-1 text-2xl font-black text-[#183d29]">${data.total.toLocaleString()}</p>
+                <p className="mt-1 text-2xl font-black text-[#183d29]">{data.total.toLocaleString("en-US", { style: "currency", currency: "USD" })}</p>
               )}
             </>
           )}
         </div>
 
         {/* Signature form */}
+        {data.approvalType === "ESTIMATE" && <div className="rounded-xl border border-border bg-white p-5"><h2 className="font-bold">{data.title}</h2><p className="mt-2 text-sm">{data.clientName} · {data.address}</p>{([['Scope',data.scope],['Exclusions',data.exclusions],['Allowances and selections',data.allowances],['Schedule assumptions',data.schedule],['Payment schedule',data.paymentSchedule],['Warranty and contract terms',data.warranty]] as const).map(([label,value]) => <section className="mt-4" key={label}><h3 className="text-sm font-bold">{label}</h3><p className="mt-1 whitespace-pre-wrap text-sm">{value}</p></section>)}<p className="mt-4 text-sm font-semibold">Documented deposit: {Number(data.requiredDeposit).toLocaleString("en-US",{style:"currency",currency:"USD"})}</p><a href={data.documentUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block font-semibold text-primary underline">Open the complete reviewed proposal PDF</a><p className="mt-2 text-xs text-muted-foreground">Read the complete document before responding. Contact Flipside to resolve any difference or unanswered question.</p></div>}
         <div className="rounded-xl border border-border bg-white p-5">
           <label className="mb-2 block text-sm font-bold">
             Your full name for this response
@@ -200,7 +212,7 @@ export default function ApprovePage() {
             className="h-11 w-full rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-[#183d29]"
           />
           {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-          <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} className="mt-1" />I reviewed the scope, price change and time impact shown above.</label>
+          <label className="mt-3 flex items-start gap-2 text-sm"><input type="checkbox" checked={reviewed} onChange={event => setReviewed(event.target.checked)} className="mt-1" />{data.approvalType === "ESTIMATE" ? "I reviewed the complete proposal PDF and the scope, exclusions, allowances, price, payment schedule, warranty and schedule assumptions shown above." : "I reviewed the scope, price change and time impact shown above."}</label>
           <p className="mt-3 text-xs text-muted-foreground">{data.scheduleNote}</p>
           <p className="mt-2 text-xs text-muted-foreground">Link expires {new Date(data.expiresAt).toLocaleDateString()}.</p>
           <p className="mt-3 text-xs text-muted-foreground">

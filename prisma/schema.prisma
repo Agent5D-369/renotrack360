@@ -1080,6 +1080,7 @@ model ActualCost {
 }
 
 model Job {
+  estimateConversion EstimateConversion?
   scopeItems ScopeItem[]
 
   id               String      @id @default(cuid())
@@ -1631,6 +1632,7 @@ model WeeklyReportPublication {
 }
 
 model PriceSnapshot {
+  estimateSnapshots EstimateSnapshot[]
   costSourceVersionId String?
   costSourceVersion CostSourceVersion? @relation(fields: [costSourceVersionId], references: [id], onDelete: Restrict)
   scopeItems ScopeItem[]
@@ -1690,6 +1692,8 @@ model ChangeOrder {
 }
 
 model Estimate {
+  snapshots EstimateSnapshot[]
+  acceptance EstimateAcceptance?
   id              String         @id @default(cuid())
   quoteId         String
   estimateNumber  String         @unique
@@ -1869,6 +1873,7 @@ model Activity {
 }
 
 model FileAsset {
+  estimateSnapshots EstimateSnapshot[]
   scopeItems ScopeItem[]
   executionEvidence ExecutionEvidence[]
 
@@ -2008,6 +2013,7 @@ model RequiredEvidence {
 }
 
 model ClientApproval {
+  estimateSnapshot EstimateSnapshot?
   snapshot ChangeOrderSnapshot?
   id            String         @id @default(cuid())
   estimateId    String?
@@ -2535,3 +2541,49 @@ model WorkStepReview {
   @@unique([stepId, sequence])
 }
 
+
+model EstimateSnapshot {
+  id String @id @default(cuid())
+  organizationId String
+  estimateId String
+  requestId String @unique
+  inputDigest String
+  priceSnapshotId String
+  sourceFileId String
+  sourceSha256 String
+  approvalId String @unique
+  sourceDigest String
+  contentDigest String
+  content Json
+  expiresAt DateTime
+  issuedById String
+  createdAt DateTime @default(now())
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Restrict)
+  priceSnapshot PriceSnapshot @relation(fields: [priceSnapshotId], references: [id], onDelete: Restrict)
+  sourceFile FileAsset @relation(fields: [sourceFileId], references: [id], onDelete: Restrict)
+  approval ClientApproval @relation(fields: [approvalId], references: [id], onDelete: Restrict)
+  acceptance EstimateAcceptance?
+  @@index([organizationId, estimateId, createdAt])
+}
+model EstimateAcceptance {
+  id String @id @default(cuid())
+  estimateId String @unique
+  snapshotId String @unique
+  signerName String
+  ipAddressHash String?
+  contentDigest String
+  acceptedAt DateTime @default(now())
+  estimate Estimate @relation(fields: [estimateId], references: [id], onDelete: Restrict)
+  snapshot EstimateSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Restrict)
+  conversion EstimateConversion?
+}
+
+model EstimateConversion {
+  id String @id @default(cuid())
+  acceptanceId String @unique
+  jobId String @unique
+  convertedById String
+  createdAt DateTime @default(now())
+  acceptance EstimateAcceptance @relation(fields: [acceptanceId], references: [id], onDelete: Restrict)
+  job Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+}
