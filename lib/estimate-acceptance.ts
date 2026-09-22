@@ -6,13 +6,23 @@ import { ChangeApprovalError } from "./change-order-ledger";
 import { hasStaffAccess } from "./staff-policy";
 import { readPrivateAsset } from "./private-media";
 import { DEFAULT_ORG_ID, renovationPhaseDetails } from "./constants";
+import { billingScheduleInputSchema, calculateBillingMilestones, type BillingMilestone } from "./billing-schedule";
+export { defaultBillingMilestones } from "./billing-schedule";
 
 const hash = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 const text = z.string().trim().min(20).max(12000);
 const amount = z.string().regex(/^(0|[1-9]\d{0,9})(\.\d{1,2})?$/);
-export const proposalFields = z.object({ scope: text, exclusions: text, allowances: text, schedule: text, paymentSchedule: text, warranty: text, requiredDeposit: amount });
-const inputSchema = proposalFields.extend({ requestId: z.string().uuid(), reviewedDigest: z.string().regex(/^[a-f0-9]{64}$/), priceSnapshotId: z.string().min(1), sourceFileId: z.string().min(1), ownerReviewed: z.literal(true) });
-const contentSchema = proposalFields.extend({ estimateNumber: z.string(), title: z.string(), clientName: z.string(), address: z.string(), total: amount, quoteId: z.string(), clientProfileId: z.string(), propertyId: z.string() });
+function billingScheduleFormValue(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch { return value; }
+}
+export const proposalFields = z.object({ scope: text, exclusions: text, allowances: text, schedule: text, paymentSchedule: text, warranty: text, requiredDeposit: amount, billingMilestones: billingScheduleInputSchema.optional() });
+const inputSchema = proposalFields.extend({ billingMilestones: z.preprocess(billingScheduleFormValue, billingScheduleInputSchema.optional()), requestId: z.string().uuid(), reviewedDigest: z.string().regex(/^[a-f0-9]{64}$/), priceSnapshotId: z.string().min(1), sourceFileId: z.string().min(1), ownerReviewed: z.literal(true) });
+export const estimateProposalContentSchema = proposalFields.extend({ estimateNumber: z.string(), title: z.string(), clientName: z.string(), address: z.string(), total: amount, quoteId: z.string(), clientProfileId: z.string(), propertyId: z.string() });
+export type EstimateProposalContent = z.infer<typeof estimateProposalContentSchema>;
+export const parseEstimateProposalContent = (value: unknown) => estimateProposalContentSchema.parse(value);
+export const estimateProposalContentDigest = (value: EstimateProposalContent) => hash(value);
 const estimateInclude = { quote: { include: { lineItems: { orderBy: { id: "asc" } } } }, clientProfile: true, property: true, acceptance: { include: { snapshot: true, conversion: true } } } satisfies Prisma.EstimateInclude;
 type EstimateRecord = Prisma.EstimateGetPayload<{ include: typeof estimateInclude }>;
 export async function ownedEstimate(db: PrismaClient | Prisma.TransactionClient, id: string) {
@@ -39,7 +49,13 @@ export async function issueEstimateApproval(db: PrismaClient, actorId: string, e
     const price = await tx.priceSnapshot.findFirst({ where: { id: input.priceSnapshotId, organizationId } });
     if (!price || !price.sellingPrice.eq(estimate.total) || price.sellingPrice.lte(0) || price.sellingPrice.gt("9999999999.99")) throw new FinancialRecordError("The estimate total must exactly match a positive retained gross-margin price. Review and update the draft estimate first; no legacy price is changed automatically.");
     if (new Prisma.Decimal(input.requiredDeposit).gt(price.sellingPrice)) throw new FinancialRecordError("The documented deposit cannot exceed the contract price.");
-    const content = contentSchema.parse({ ...proposalFields.parse(input), estimateNumber: estimate.estimateNumber, title: estimate.quote.quoteName, clientName: estimate.clientProfile.profileName, address: estimate.property.propertyAddress, total: price.sellingPrice.toFixed(2), quoteId: estimate.quoteId, clientProfileId: estimate.clientProfile.id, propertyId: estimate.property.id });
+    if (input.billingMilestones) {
+      let milestoneAmounts: ReturnType<typeof calculateBillingMilestones>;
+      try { milestoneAmounts = calculateBillingMilestones(price.sellingPrice.toFixed(2), input.billingMilestones); }
+      catch (error) { throw new FinancialRecordError(error instanceof Error ? error.message : "The billing milestone amounts are invalid."); }
+      if (!new Prisma.Decimal(milestoneAmounts[0].amount).eq(input.requiredDeposit)) throw new FinancialRecordError("The required deposit must equal the first billing milestone amount.");
+    }
+    const content = estimateProposalContentSchema.parse({ ...proposalFields.parse(input), estimateNumber: estimate.estimateNumber, title: estimate.quote.quoteName, clientName: estimate.clientProfile.profileName, address: estimate.property.propertyAddress, total: price.sellingPrice.toFixed(2), quoteId: estimate.quoteId, clientProfileId: estimate.clientProfile.id, propertyId: estimate.property.id });
     await tx.clientApproval.updateMany({ where: { estimateId, status: { in: ["DRAFT", "SENT", "VIEWED", "CHANGES_REQUESTED"] } }, data: { status: "EXPIRED" } });
     const approval = await tx.clientApproval.create({ data: { estimateId, approvalType: "ESTIMATE", token: randomBytes(32).toString("hex"), status: "SENT", sentAt: new Date(), signerEmail: estimate.clientProfile.email } });
     const snapshot = await tx.estimateSnapshot.create({ data: { organizationId, estimateId, requestId: input.requestId, inputDigest, priceSnapshotId: price.id, sourceFileId: asset.id, sourceSha256: asset.sha256!, approvalId: approval.id, sourceDigest: input.reviewedDigest, contentDigest: hash(content), content, expiresAt: new Date(Date.now() + 14 * 86400000), issuedById: actorId } });
@@ -55,7 +71,7 @@ export async function readEstimateApproval(db: PrismaClient | Prisma.Transaction
   const snapshot = approval?.estimateSnapshot;
   if (!approval || !snapshot || approval.approvalType !== "ESTIMATE" || approval.estimateId !== snapshot.estimateId || snapshot.organizationId !== DEFAULT_ORG_ID) throw new ChangeApprovalError("This estimate needs a current, reviewed approval link. Contact Flipside.", 409);
   if (approval.status === "EXPIRED" || snapshot.expiresAt.getTime() <= Date.now()) throw new ChangeApprovalError("This proposal link has expired. Contact Flipside.", 410);
-  const estimate = await ownedEstimate(db, snapshot.estimateId), content = contentSchema.parse(snapshot.content);
+  const estimate = await ownedEstimate(db, snapshot.estimateId), content = estimateProposalContentSchema.parse(snapshot.content);
   if (hash(content) !== snapshot.contentDigest || snapshot.sourceFile.sha256 !== snapshot.sourceSha256 || snapshot.sourceFile.entityType !== "QUOTE" || snapshot.sourceFile.entityId !== estimate.quoteId) throw new ChangeApprovalError("The retained proposal could not be verified.", 409);
   if (["SENT", "VIEWED"].includes(approval.status) && estimateReviewDigest(estimate) !== snapshot.sourceDigest) throw new ChangeApprovalError("This estimate changed and needs a refreshed approval link.", 409);
   const issuer = await db.user.findUnique({ where: { id: snapshot.issuedById }, include: { memberships: true } }), membership = issuer?.memberships.find(m => m.organizationId === snapshot.organizationId);
@@ -96,7 +112,7 @@ export async function convertAcceptedEstimate(db: PrismaClient, actorId: string,
     if (!acceptance) throw new FinancialRecordError("A retained client acceptance is required before creating the job.");
     if (acceptance.conversion) return tx.job.findUniqueOrThrow({ where: { id: acceptance.conversion.jobId } });
     if (await tx.job.count({ where: { approvedQuoteId: estimate.quoteId } })) throw new FinancialRecordError("This quote already has a job. Review it instead of creating a duplicate.");
-    const content = contentSchema.parse(acceptance.snapshot.content);
+    const content = estimateProposalContentSchema.parse(acceptance.snapshot.content);
     if (hash(content) !== acceptance.contentDigest || acceptance.snapshot.contentDigest !== acceptance.contentDigest || !estimate.clientProfile || !estimate.property || estimate.clientProfile.organizationId !== organizationId || estimate.property.organizationId !== organizationId || estimate.clientProfile.id !== content.clientProfileId || estimate.property.id !== content.propertyId) throw new FinancialRecordError("The accepted client, property or proposal no longer matches. Review the retained contract.");
     const job = await tx.job.create({ data: { organizationId, jobName: content.title, clientProfileId: content.clientProfileId, propertyId: content.propertyId, approvedQuoteId: content.quoteId, contractAmount: content.total, amountPaid: "0", balanceDue: content.total, activePhase: renovationPhaseDetails[0][0], phases: { create: renovationPhaseDetails.map(([phaseName, description], index) => ({ phaseNumber: index + 1, phaseName, clientUpdate: description })) } } });
     await tx.estimateConversion.create({ data: { acceptanceId: acceptance.id, jobId: job.id, convertedById: actorId } });
@@ -109,7 +125,7 @@ export async function convertAcceptedEstimate(db: PrismaClient, actorId: string,
 export async function nativeAcceptedContract(db: PrismaClient | Prisma.TransactionClient, jobId: string) {
   const conversion = await db.estimateConversion.findUnique({ where: { jobId }, include: { acceptance: { include: { snapshot: true } } } });
   if (!conversion) return null;
-  const { acceptance } = conversion, content = contentSchema.parse(acceptance.snapshot.content);
+  const { acceptance } = conversion, content = estimateProposalContentSchema.parse(acceptance.snapshot.content);
   if (hash(content) !== acceptance.contentDigest || acceptance.snapshot.contentDigest !== acceptance.contentDigest) throw new FinancialRecordError("The retained accepted contract could not be verified.");
   return { ...content, sourceFileId: acceptance.snapshot.sourceFileId };
 }

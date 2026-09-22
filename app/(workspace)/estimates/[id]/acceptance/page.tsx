@@ -8,6 +8,8 @@ import { uploadEstimateContract, issueReviewedEstimate, convertReviewedEstimate 
 import { PageHeader } from "@/components/page-header";
 import { Panel, Button } from "@/components/ui";
 import { money } from "@/lib/format";
+import { BillingScheduleFields } from "@/components/billing-schedule-fields";
+import { defaultBillingMilestones } from "@/lib/billing-schedule";
 
 export default async function EstimateAcceptancePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string,string>> }) {
   await requireStaffPage();
@@ -29,7 +31,7 @@ export default async function EstimateAcceptancePage({ params, searchParams }: {
         {!prices.length && <p className="text-sm">No saved gross-margin price matches this draft. Review the pricing scenario and draft total before issuing it.</p>}
         <label className="text-sm">Complete client proposal PDF<select name="sourceFileId" required className={field}><option value="">Select reviewed document</option>{files.map(file=><option key={file.id} value={file.id}>{file.fileName}</option>)}</select></label>
         {([['scope','Included scope'],['exclusions','Exclusions and client responsibilities'],['allowances','Allowances and selection budgets'],['schedule','Schedule assumptions and dependencies'],['paymentSchedule','Payment schedule and change procedure'],['warranty','Warranty and contract terms reference']] as const).map(([name,label])=><label key={name} className="text-sm">{label}<textarea name={name} required minLength={20} maxLength={12000} rows={4} className={field} defaultValue={name==='scope' ? estimate.clientFacingSummary ?? '' : undefined} /></label>)}
-        <label className="text-sm">Required deposit in the reviewed contract ($)<input name="requiredDeposit" required type="number" min="0" max={estimate.total.toString()} step="0.01" className={field} /></label>
+        <BillingScheduleFields contractTotal={estimate.total.toFixed(2)} initialMilestones={defaultBillingMilestones.map(milestone => ({ ...milestone }))} />
         <label className="flex items-start gap-2 text-sm"><input name="ownerReviewed" type="checkbox" required className="mt-1" />I reviewed the exact client, property, retained price, complete PDF and the text above. They agree and are approved for this client. The document contains our actual approved contract terms; this form does not supply legal terms.</label>
         <p className="text-xs text-muted-foreground">The link expires in 14 days. Issuing a replacement expires prior open links. Share the resulting link only after your review; no message is sent automatically.</p><Button type="submit">Retain reviewed proposal and create client link</Button>
       </form>}</Panel>

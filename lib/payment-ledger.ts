@@ -98,6 +98,15 @@ export async function saveInvoiceWithLedger(db: PrismaClient, actorId: string, i
     if (before) {
       if (before.updatedAt.toISOString() !== expectedUpdatedAt) throw new PaymentLedgerError("The invoice changed. Reload before editing it.");
       await verifyInvoiceLedger(tx, before);
+      const milestoneDraft = await tx.milestoneInvoiceDraft.findUnique({ where: { invoiceId: before.id }, select: { id: true } });
+      if (milestoneDraft && (before.invoiceNumber !== input.invoiceNumber
+        || (before.jobId || "") !== input.jobId
+        || (before.clientProfileId || "") !== input.clientProfileId
+        || !before.subtotal.eq(input.subtotal)
+        || !before.tax.eq(input.tax)
+        || !before.total.eq(input.total))) {
+        throw new PaymentLedgerError("A retained milestone invoice must keep its reviewed number, job, client and amount.");
+      }
       if ((before.jobId || "") !== input.jobId || (before.clientProfileId || "") !== input.clientProfileId) {
         if (await tx.payment.count({ where: { invoiceId: before.id } })) throw new PaymentLedgerError("An invoice with payment records cannot be reassigned. Review the receipt allocation instead.");
       }

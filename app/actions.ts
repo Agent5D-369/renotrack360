@@ -519,8 +519,21 @@ export async function deleteProperty(propertyId: string) {
 }
 
 export async function deleteInvoice(invoiceId: string) {
-  await requireStaff();
-  await prisma.invoice.delete({ where: { id: invoiceId } });
+  const actor = await requireStaff();
+  const { financeActor, FinancialRecordError } = await import("@/lib/finance-lock");
+  const { assertInvoiceNotMilestoneLinked } = await import("@/lib/milestone-billing");
+  try {
+    await prisma.$transaction(async tx => {
+      const organizationId = await financeActor(tx, actor.id);
+      const invoice = await tx.invoice.findUnique({ where: { id: invoiceId }, include: { job: true, clientProfile: true } });
+      if (!invoice || (!invoice.job && !invoice.clientProfile) || (invoice.job && invoice.job.organizationId !== organizationId) || (invoice.clientProfile && invoice.clientProfile.organizationId !== organizationId)) throw new FinancialRecordError("Invoice access denied.");
+      await assertInvoiceNotMilestoneLinked(tx, invoiceId);
+      await tx.invoice.delete({ where: { id: invoiceId } });
+    });
+  } catch (error) {
+    if (error instanceof FinancialRecordError) redirect(`/invoices/${invoiceId}?error=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
   revalidatePath("/invoices");
   redirect("/invoices?flash=Invoice+deleted");
 }
@@ -2040,6 +2053,23 @@ export async function issueReviewedEstimate(estimateId: string, formData: FormDa
   try { await issueEstimateApproval(prisma, actor.id, estimateId, { ...Object.fromEntries(formData), ownerReviewed: formData.get("ownerReviewed") === "on" }, await storageRoot()); }
   catch (error) { if (error instanceof MediaError || error instanceof FinancialRecordError) redirect(`/estimates/${estimateId}/acceptance?error=` + encodeURIComponent(error.message)); throw error; }
   revalidatePath(`/estimates/${estimateId}/acceptance`); revalidatePath(`/estimates/${estimateId}`); redirect(`/estimates/${estimateId}/acceptance?flash=Reviewed+link+created.+No+message+was+sent`);
+}
+export async function createMilestoneInvoiceDraft(jobId: string, formData: FormData) {
+  const actor = await requireStaff();
+  const { createMilestoneInvoiceDraft: createDraft } = await import("@/lib/milestone-billing");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  let invoiceId: string;
+  try {
+    invoiceId = (await createDraft(prisma, actor.id, jobId, {
+      ...Object.fromEntries(formData), triggerVerified: formData.get("triggerVerified") === "on",
+    })).id;
+  } catch (error) {
+    if (error instanceof FinancialRecordError) redirect(`/jobs/${jobId}/billing?error=${encodeURIComponent(error.message)}`);
+    throw error;
+  }
+  revalidatePath(`/jobs/${jobId}/billing`);
+  revalidatePath("/invoices");
+  redirect(`/invoices/${invoiceId}?flash=Milestone+invoice+draft+created.+Review+before+sending`);
 }
 export async function convertReviewedEstimate(estimateId: string) {
   await requireStaff();

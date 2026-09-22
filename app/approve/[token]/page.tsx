@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
+import { calculateBillingMilestones } from "@/lib/billing-schedule";
 
 interface ApprovalData {
   id: string;
@@ -23,6 +24,7 @@ interface ApprovalData {
   paymentSchedule?: string;
   warranty?: string;
   requiredDeposit?: string;
+  billingMilestones?: Array<{ key: string; label: string; percent: string; triggerEvent: string; clientDescription: string }>;
   documentUrl?: string;
   orgName?: string;
   orgLogoUrl?: string | null;
@@ -199,7 +201,7 @@ export default function ApprovePage() {
         </div>
 
         {/* Signature form */}
-        {data.approvalType === "ESTIMATE" && <div className="rounded-xl border border-border bg-white p-5"><h2 className="font-bold">{data.title}</h2><p className="mt-2 text-sm">{data.clientName} · {data.address}</p>{([['Scope',data.scope],['Exclusions',data.exclusions],['Allowances and selections',data.allowances],['Schedule assumptions',data.schedule],['Payment schedule',data.paymentSchedule],['Warranty and contract terms',data.warranty]] as const).map(([label,value]) => <section className="mt-4" key={label}><h3 className="text-sm font-bold">{label}</h3><p className="mt-1 whitespace-pre-wrap text-sm">{value}</p></section>)}<p className="mt-4 text-sm font-semibold">Documented deposit: {Number(data.requiredDeposit).toLocaleString("en-US",{style:"currency",currency:"USD"})}</p><a href={data.documentUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block font-semibold text-primary underline">Open the complete reviewed proposal PDF</a><p className="mt-2 text-xs text-muted-foreground">Read the complete document before responding. Contact Flipside to resolve any difference or unanswered question.</p></div>}
+        {data.approvalType === "ESTIMATE" && <div className="rounded-xl border border-border bg-white p-5"><h2 className="font-bold">{data.title}</h2><p className="mt-2 text-sm">{data.clientName} · {data.address}</p>{([['Scope',data.scope],['Exclusions',data.exclusions],['Allowances and selections',data.allowances],['Schedule assumptions',data.schedule],['Payment schedule and change procedure',data.paymentSchedule],['Warranty and contract terms',data.warranty]] as const).map(([label,value]) => <section className="mt-4" key={label}><h3 className="text-sm font-bold">{label}</h3><p className="mt-1 whitespace-pre-wrap text-sm">{value}</p></section>)}{data.billingMilestones?.length ? <section className="mt-5"><h3 className="text-sm font-bold">Retained payment milestones</h3><div className="mt-2 space-y-2">{calculateBillingMilestones(String(data.total), data.billingMilestones).map(milestone => <div key={milestone.key} className="rounded-md border border-border bg-slate-50 p-3"><div className="flex items-start justify-between gap-3"><p className="text-sm font-semibold">{milestone.label}</p><p className="shrink-0 text-sm font-bold">{Number(milestone.amount).toLocaleString("en-US", { style: "currency", currency: "USD" })} · {milestone.percent}%</p></div><p className="mt-1 text-sm">Eligible when: {milestone.triggerEvent}</p>{milestone.clientDescription && <p className="mt-1 text-xs text-muted-foreground">{milestone.clientDescription}</p>}</div>)}</div></section> : <p className="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm">This retained proposal does not include a structured milestone schedule. Contact Flipside before approving if the payment timing is unclear.</p>}<p className="mt-4 text-sm font-semibold">Documented deposit: {Number(data.requiredDeposit).toLocaleString("en-US",{style:"currency",currency:"USD"})}</p><a href={data.documentUrl} target="_blank" rel="noreferrer" className="mt-4 inline-block font-semibold text-primary underline">Open the complete reviewed proposal PDF</a><p className="mt-2 text-xs text-muted-foreground">Read the complete document before responding. Contact Flipside to resolve any difference or unanswered question.</p></div>}
         <div className="rounded-xl border border-border bg-white p-5">
           <label className="mb-2 block text-sm font-bold">
             Your full name for this response
