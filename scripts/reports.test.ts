@@ -1,7 +1,9 @@
 import test, { before, after } from "node:test";
 import assert from "node:assert/strict";
 import { PrismaClient } from "@prisma/client";
-import { publishReport, publishedReportForToken, reportDigest, ReportPublicationError } from "../lib/report-publication";
+import { publishReport, publishedReportForToken, publicReportFields, reportDigest, ReportPublicationError } from "../lib/report-publication";
+import { jobInOrganization, weeklyReportInOrganization } from "../lib/company-scope";
+import { assembleWeeklyReportEvidence, weeklyEvidenceWindow } from "../lib/report-evidence";
 
 const db = new PrismaClient({ log: [] });
 const target = new URL(process.env.DATABASE_URL!);
@@ -48,6 +50,34 @@ test("missing, foreign and revoked identities cannot publish", async () => {
   assert.equal(await db.weeklyReportPublication.count({ where: { reportId: report.id } }), 0);
 });
 
+test("company scope excludes foreign report and job identifiers", async () => {
+  const owned = await draft();
+  const foreign = await draft("foreign-job");
+  const visible = (await db.weeklyReport.findMany({
+    where: weeklyReportInOrganization("flipside-org"), orderBy: { id: "asc" }, select: { id: true },
+  })).map(value => value.id);
+  assert.ok(visible.includes(owned.id));
+  assert.ok(!visible.includes(foreign.id));
+  assert.equal(await db.weeklyReport.findFirst({
+    where: weeklyReportInOrganization("flipside-org", { id: foreign.id }), select: { id: true },
+  }), null);
+  assert.equal(await db.job.findFirst({
+    where: jobInOrganization("flipside-org", { id: "foreign-job" }), select: { id: true },
+  }), null);
+  assert.throws(() => weeklyReportInOrganization(" "), /verified organization/);
+});
+
+test("a public report remains capability-bound across organization scopes", async () => {
+  await db.job.update({ where: { id: "foreign-job" }, data: { portalToken: "foreign-report-capability-token" } });
+  const report = await draft("foreign-job");
+  const publication = await db.weeklyReportPublication.create({ data: {
+    reportId: report.id, revision: 1, sourceDigest: reportDigest(report), reviewedById: "external-review-fixture",
+    ...publicReportFields(report),
+  } });
+  assert.equal((await publishedReportForToken(db, publication.id, "foreign-report-capability-token"))?.report.job.organizationId, "foreign-org");
+  assert.equal(await publishedReportForToken(db, publication.id, token), null);
+});
+
 test("published reports reject update, delete and truncate", async () => {
   const report = await draft(), publication = await publishReport(db, "report-owner", report.id, reportDigest(report));
   await assert.rejects(() => db.weeklyReportPublication.update({ where: { id: publication.id }, data: { clientSummary: "Overwrite" } }), /immutable/);
@@ -62,4 +92,38 @@ test("audit failure prevents publication without changing the draft", async () =
   finally { await db.$executeRawUnsafe('ALTER TABLE "AuditEvent" DROP CONSTRAINT report_test_block'); }
   assert.equal(await db.weeklyReportPublication.count({ where: { reportId: report.id } }), 0);
   assert.deepEqual(await db.weeklyReport.findUniqueOrThrow({ where: { id: report.id } }), report);
+});
+
+test("weekly evidence uses the same seven-day date-only convention as the field-log form", () => {
+  const spring = weeklyEvidenceWindow("2026-03-15");
+  assert.equal(spring.startDate, "2026-03-09");
+  assert.equal(spring.startInclusive.toISOString(), "2026-03-09T00:00:00.000Z");
+  assert.equal(spring.endExclusive.toISOString(), "2026-03-16T00:00:00.000Z");
+  const fall = weeklyEvidenceWindow("2026-11-01");
+  assert.equal(fall.startInclusive.toISOString(), "2026-10-26T00:00:00.000Z");
+  assert.equal(fall.endExclusive.toISOString(), "2026-11-02T00:00:00.000Z");
+  assert.throws(() => weeklyEvidenceWindow("2026-02-30"), /valid calendar date/);
+});
+
+test("report evidence uses only bounded client-visible completed-work logs and states missing task coverage", async () => {
+  await db.fieldReport.createMany({ data: [
+    { id: "visible-start-date", jobId: "report-job", reportDate: new Date("2026-03-09"), crewSummary: "Private crew", workCompleted: "  Installed reviewed cabinet boxes.  ", blockers: "Private blocker", clientVisible: true },
+    { id: "visible-end-date", jobId: "report-job", reportDate: new Date("2026-03-15"), crewSummary: "Crew", workCompleted: "Completed client-reviewed trim.", clientVisible: true },
+    { id: "private-in-window", jobId: "report-job", reportDate: new Date("2026-03-10"), crewSummary: "Private crew", workCompleted: "Never expose private log text", clientVisible: false },
+    { id: "visible-after-window", jobId: "report-job", reportDate: new Date("2026-03-16"), crewSummary: "Crew", workCompleted: "Outside the requested week", clientVisible: true },
+  ] });
+  await db.task.create({ data: { id: "completed-without-date", jobId: "report-job", taskName: "Private task name", status: "COMPLETE" } });
+
+  const evidence = await assembleWeeklyReportEvidence(db, "flipside-org", "report-job", "2026-03-15");
+  assert.equal(evidence.range.startDate, "2026-03-09");
+  assert.equal(evidence.range.endDate, "2026-03-15");
+  assert.deepEqual(evidence.sources.map(source => source.id), ["visible-start-date", "visible-end-date"]);
+  assert.equal(evidence.draft.workCompleted, "2026-03-09: Installed reviewed cabinet boxes.\n\n2026-03-15: Completed client-reviewed trim.");
+  assert.equal(JSON.stringify(evidence).includes("Never expose private log text"), false);
+  assert.equal(JSON.stringify(evidence).includes("Private blocker"), false);
+  assert.equal(JSON.stringify(evidence).includes("Private task name"), false);
+  assert.ok(evidence.missingCoverage.some(item => item.includes("private field report")));
+  assert.ok(evidence.missingCoverage.some(item => item.includes("neither a completion timestamp nor a client-visibility review")));
+  await assert.rejects(() => assembleWeeklyReportEvidence(db, "flipside-org", "foreign-job", "2026-03-15"), /Job not found/);
+  await assert.rejects(() => assembleWeeklyReportEvidence(db, "", "report-job", "2026-03-15"), /verified organization/);
 });

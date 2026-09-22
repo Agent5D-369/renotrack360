@@ -31,7 +31,8 @@
     "test:work-items": "node scripts/test-access.mjs work-items",
     "test:cost-sources": "node scripts/test-access.mjs cost-sources",
     "test:payments": "node scripts/test-access.mjs payments",
-    "test:financial-review": "node scripts/test-access.mjs financial-review"
+    "test:financial-review": "node scripts/test-access.mjs financial-review",
+    "test:ai": "tsx --test scripts/ai.test.ts"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

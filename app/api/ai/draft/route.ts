@@ -1,44 +1,54 @@
-
-import { staffApiDenial } from "@/lib/staff-access";
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
-import { callLLM, weeklyReportPrompt, estimateReviewPrompt } from "@/lib/ai";
+import { staffApiDenial } from "@/lib/staff-access";
+import {
+  AiRuntimeError,
+  aiDraftInputSchema,
+  callLLM,
+  estimateReviewPrompt,
+  publicAiRuntimeFailure,
+  weeklyReportPrompt,
+} from "@/lib/ai";
+
+const MAX_BODY_BYTES = 64_000;
 
 export async function POST(req: NextRequest) {
   const denied = await staffApiDenial();
   if (denied) return denied;
-  const session = await getServerSession(authOptions);
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const contentLength = Number(req.headers.get("content-length") ?? 0);
+  if (!Number.isFinite(contentLength) || contentLength > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "AI draft input is invalid." }, { status: 400 });
+  }
+
+  const rawBody = await req.text().catch(() => "");
+  if (!rawBody || rawBody.length > MAX_BODY_BYTES) {
+    return NextResponse.json({ error: "AI draft input is invalid." }, { status: 400 });
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(rawBody);
+  } catch {
+    return NextResponse.json({ error: "AI draft input is invalid." }, { status: 400 });
+  }
+  const parsed = aiDraftInputSchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "AI draft input is invalid." }, { status: 400 });
+  }
 
   try {
-    const body = await req.json();
-    const { type } = body;
-
-    if (type === "weekly-report") {
-      const { jobName, workCompleted, issuesFound, decisionsNeeded, nextWeekPlan } = body;
-      if (!workCompleted?.trim()) {
-        return NextResponse.json({ error: "Work completed is required to generate a summary." }, { status: 400 });
-      }
-      const prompt = weeklyReportPrompt({ jobName, workCompleted, issuesFound, decisionsNeeded, nextWeekPlan });
-      const result = await callLLM(prompt, "weekly-report", 512);
+    if (parsed.data.type === "weekly-report") {
+      const prompt = weeklyReportPrompt(parsed.data);
+      const result = await callLLM(prompt, "weekly-report", 512, { containsClientData: true });
       return NextResponse.json({ text: result.text, model: result.model });
     }
 
-    if (type === "estimate-review") {
-      const { projectType, jobName, total, items } = body;
-      if (!items?.length) {
-        return NextResponse.json({ error: "Add line items first before running an AI review." }, { status: 400 });
-      }
-      const prompt = estimateReviewPrompt({ projectType, jobName, total, items });
-      const result = await callLLM(prompt, "estimate-review", 1024);
-      return NextResponse.json({ text: result.text, model: result.model });
-    }
-
-    return NextResponse.json({ error: "Unknown draft type." }, { status: 400 });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "AI draft failed";
-    console.error("AI draft error:", err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const prompt = estimateReviewPrompt(parsed.data);
+    const result = await callLLM(prompt, "estimate-review", 1024, { containsClientData: true });
+    return NextResponse.json({ text: result.text, model: result.model });
+  } catch (error) {
+    console.error("AI draft failed", error instanceof AiRuntimeError ? error.code : "unexpected");
+    const failure = publicAiRuntimeFailure(error, "The AI draft could not be generated.");
+    return NextResponse.json({ error: failure.error }, { status: failure.status });
   }
 }

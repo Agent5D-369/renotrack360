@@ -177,8 +177,8 @@ export default async function SettingsPage() {
       <div className="mt-6">
         <h2 className="mb-1 text-lg font-bold">AI provider</h2>
         <p className="mb-4 text-sm text-muted-foreground">
-          RenoTrack360 is AI-ready. Add your own API key from any supported provider.
-          Your key is stored in your database and used only for features you trigger.
+          Connect a supported provider using a deployment secret reference.
+          Credentials stay on the server and AI runs only for features you trigger.
           AI drafts, you approve.
         </p>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -200,11 +200,12 @@ export default async function SettingsPage() {
                   <input type="hidden" name="provider" value={provider.value} />
                   <input
                     type="password"
-                    name="apiKey"
-                    placeholder={hasKey ? "••••••••••••••••••••" : provider.placeholder}
+                    name="apiKeySecretRef"
+                    placeholder={hasKey ? "Leave blank to keep saved connection" : "env:AI_PROVIDER_OPENAI_KEY"}
                     autoComplete="new-password"
                     className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
                   />
+                  <p className="text-xs text-muted-foreground">Your deployment administrator must configure the referenced secret. Use env:AI_PROVIDER_… or env:RENOTRACK_AI_….</p>
                   <input
                     type="text"
                     name="defaultModel"
@@ -212,6 +213,21 @@ export default async function SettingsPage() {
                     defaultValue={config?.defaultModel ?? ""}
                     className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
                   />
+                  <label className="grid gap-1 text-xs font-semibold">
+                    Monthly AI budget (USD)
+                    <input type="number" name="monthlyBudgetCents" min="0" step="0.01" defaultValue={config?.monthlyBudgetCents != null ? config.monthlyBudgetCents / 100 : ""} placeholder="No configured limit" className="h-9 rounded-md border border-border px-3" />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs">
+                    <input type="checkbox" name="allowClientData" defaultChecked={config?.allowClientData ?? false} />
+                    Allow reviewed project and client text to be sent to this provider
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold">
+                    Provider retention policy
+                    <select name="dataRetentionMode" defaultValue={config?.dataRetentionMode ?? "standard"} className="h-9 rounded-md border border-border px-2">
+                      <option value="standard">Standard provider terms</option>
+                      <option value="zero-retention">Require zero retention</option>
+                    </select>
+                  </label>
                   <label className="flex items-center gap-2 text-xs font-semibold">
                     <input
                       type="checkbox"
@@ -222,7 +238,7 @@ export default async function SettingsPage() {
                     Enable as active provider
                   </label>
                   <button type="submit" className="h-8 rounded-md bg-primary px-3 text-xs font-bold text-primary-foreground hover:opacity-90">
-                    {hasKey ? "Update" : "Save key"}
+                    {hasKey ? "Update" : "Save connection"}
                   </button>
                 </form>
               </Panel>
@@ -232,7 +248,7 @@ export default async function SettingsPage() {
         <div className="mt-3 flex items-start gap-4">
           <AiTestButton />
           <p className="text-xs text-muted-foreground mt-2">
-            Only one provider active at a time. API keys are stored in your database.
+            One provider is active at a time. Budget checks use recorded estimated usage; provider billing remains authoritative.
           </p>
         </div>
       </div>
@@ -312,7 +328,7 @@ export default async function SettingsPage() {
           </div>
           <div className="grid gap-1 sm:col-span-2">
             <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Gmail App Password <span className="font-normal normal-case text-muted-foreground">(16 characters — not your real password)</span></label>
-            <input name="smtpPassword" type="password" defaultValue={org.smtpPassword ?? ""} placeholder="xxxx xxxx xxxx xxxx" className="h-10 rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
+            <input name="smtpPassword" type="password" autoComplete="new-password" placeholder={org.smtpPassword ? "Leave blank to keep saved password" : "xxxx xxxx xxxx xxxx"} className="h-10 rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
           </div>
           <div className="flex gap-3 sm:col-span-2">
             <button type="submit" className="h-10 rounded-md bg-primary px-5 text-sm font-bold text-primary-foreground hover:opacity-90">Save email settings</button>
@@ -325,9 +341,6 @@ export default async function SettingsPage() {
             <div className="flex-1 grid gap-1">
               <label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Send test email to</label>
               <input name="testTo" type="email" defaultValue={org.smtpFromEmail} className="h-10 rounded-md border border-border px-3 text-sm outline-none focus:ring-2 focus:ring-primary" />
-              <input type="hidden" name="smtpFromName" value={org.smtpFromName ?? ""} />
-              <input type="hidden" name="smtpFromEmail" value={org.smtpFromEmail} />
-              <input type="hidden" name="smtpPassword" value={org.smtpPassword} />
             </div>
             <button type="submit" className="h-10 rounded-md border border-border px-4 text-sm font-semibold hover:bg-muted">Send test →</button>
           </form>

@@ -3,10 +3,15 @@ import Link from "next/link";
 import { DataTable } from "@/components/data-table";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { weeklyReportInOrganization } from "@/lib/company-scope";
 
 export default async function WeeklyReportsPage() {
-  await requireStaffPage();
-  const reports = await prisma.weeklyReport.findMany({ include: { job: true }, orderBy: { weekEnding: "desc" } });
+  const actor = await requireStaffPage();
+  const reports = await prisma.weeklyReport.findMany({
+    where: weeklyReportInOrganization(actor.organizationId),
+    include: { job: true },
+    orderBy: { weekEnding: "desc" },
+  });
   return (
     <DataTable
       title="Weekly Reports"

@@ -2,7 +2,7 @@ import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { publishWeeklyReport, sendWeeklyReportEmail } from "@/app/actions";
 import { reportDigest } from "@/lib/report-publication";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { weeklyReportInOrganization } from "@/lib/company-scope";
 import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
@@ -10,13 +10,13 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function WeeklyReportDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const report = await prisma.weeklyReport.findUniqueOrThrow({
-    where: { id },
+  const report = await prisma.weeklyReport.findFirst({
+    where: weeklyReportInOrganization(actor.organizationId, { id }),
     include: { job: { include: { clientProfile: true } }, publications: { orderBy: { revision: "desc" }, take: 1 } }
   });
-  if (report.job.organizationId !== DEFAULT_ORG_ID) notFound();
+  if (!report) notFound();
   const publication = report.publications[0];
   const digest = reportDigest(report);
   const hasUnpublishedChanges = publication?.sourceDigest !== digest;

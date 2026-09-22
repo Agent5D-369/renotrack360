@@ -826,21 +826,21 @@ export async function createEstimateFromQuote(quoteId: string) {
 }
 
 export async function createWeeklyReport(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   let parsed: ReturnType<typeof weeklyReportSchema.parse>;
   try { parsed = weeklyReportSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/weekly-reports/new"); }
   const { assertEntityOwnership } = await import("@/lib/private-media");
-  await assertEntityOwnership(prisma, "JOB", parsed.jobId, DEFAULT_ORG_ID);
+  await assertEntityOwnership(prisma, "JOB", parsed.jobId, actor.organizationId);
   await prisma.weeklyReport.create({ data: parsed });
   revalidatePath("/weekly-reports");
   redirect("/weekly-reports?flash=Report+saved");
 }
 
 export async function updateWeeklyReport(reportId: string, formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = weeklyReportSchema.parse(nullable(data(formData)));
   const { assertEntityOwnership } = await import("@/lib/private-media");
-  await assertEntityOwnership(prisma, "WEEKLY_REPORT", reportId, DEFAULT_ORG_ID);
+  await assertEntityOwnership(prisma, "WEEKLY_REPORT", reportId, actor.organizationId);
   const existing = await prisma.weeklyReport.findUniqueOrThrow({ where: { id: reportId } });
   if (parsed.jobId !== existing.jobId) throw new Error("A report cannot be moved to another project.");
   await prisma.weeklyReport.update({
@@ -1272,16 +1272,17 @@ export async function markJobDepositReceived(jobId: string) {
 // ─── Phase 6A: Transactional email ───────────────────────────────────────────
 
 export async function sendWeeklyReportEmail(reportId: string) {
-  await requireStaff();
+  const actor = await requireStaff();
+  const { weeklyReportInOrganization } = await import("@/lib/company-scope");
   const { sendEmail } = await import("@/lib/email-sender");
   const { dateShort } = await import("@/lib/format");
 
-  const report = await prisma.weeklyReport.findUniqueOrThrow({
-    where: { id: reportId },
+  const report = await prisma.weeklyReport.findFirstOrThrow({
+    where: weeklyReportInOrganization(actor.organizationId, { id: reportId }),
     include: { job: { include: { clientProfile: true, organization: true } }, publications: { orderBy: { revision: "desc" }, take: 1 } },
   });
 
-  if (report.job.organizationId !== DEFAULT_ORG_ID) throw new Error("Report not found.");
+  if (report.job.organizationId !== actor.organizationId) throw new Error("Report not found.");
   const publication = report.publications[0];
   if (!publication) throw new Error("Review and publish this report before sending it.");
 
@@ -1296,7 +1297,7 @@ export async function sendWeeklyReportEmail(reportId: string) {
   const portalLink = report.job.portalToken ? `\n\nYour project portal: ${appUrl}/portal/${report.job.portalToken}` : "";
   const body = `Hi ${client.profileName},\n\nHere is your project update for the week ending ${dateShort(publication.weekEnding)}.\n\n${publication.clientSummary ?? publication.workCompleted}${publication.decisionsNeeded ? `\n\nDecisions needed:\n${publication.decisionsNeeded}` : ""}${publication.nextWeekPlan ? `\n\nNext week:\n${publication.nextWeekPlan}` : ""}${portalLink}\n\nBest regards\n${report.job.organization.name}`;
 
-  const smtpOrg = await prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { smtpFromName: true, smtpFromEmail: true, smtpPassword: true } });
+  const smtpOrg = await prisma.organization.findUnique({ where: { id: actor.organizationId }, select: { smtpFromName: true, smtpFromEmail: true, smtpPassword: true } });
   const smtpConfig = smtpOrg?.smtpFromEmail && smtpOrg?.smtpPassword ? { fromName: smtpOrg.smtpFromName ?? smtpOrg.smtpFromEmail, fromEmail: smtpOrg.smtpFromEmail, password: smtpOrg.smtpPassword } : null;
   const result = await sendEmail({ to: client.email, subject, text: body }, smtpConfig);
 
@@ -1750,36 +1751,24 @@ export async function generateReviewToken(feedbackRequestId: string) {
 // ─── Phase 4: AI provider config ─────────────────────────────────────────────
 
 export async function saveAiProviderConfig(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
+  const { parseAiProviderSettings } = await import("@/lib/ai");
   const provider = String(formData.get("provider") || "");
-  const apiKey = String(formData.get("apiKey") || "").trim();
-  const defaultModel = String(formData.get("defaultModel") || "").trim() || null;
-  const enabled = formData.get("enabled") === "true" || formData.get("enabled") === "on";
-  const monthlyBudgetCents = formData.get("monthlyBudgetCents")
-    ? Math.round(Number(formData.get("monthlyBudgetCents")) * 100)
-    : null;
-
-  if (!provider) return;
-
+  if (!Object.values(AiProvider).includes(provider as AiProvider)) redirect("/settings?error=Choose+a+supported+AI+provider");
   const providerEnum = provider as AiProvider;
-  await prisma.aiProviderConfig.upsert({
-    where: { organizationId_provider: { organizationId: DEFAULT_ORG_ID, provider: providerEnum } },
-    update: {
-      ...(apiKey ? { apiKeySecretRef: apiKey } : {}),
-      defaultModel,
-      enabled,
-      monthlyBudgetCents,
-      displayName: provider,
-    },
-    create: {
-      organizationId: DEFAULT_ORG_ID,
-      provider: providerEnum,
-      displayName: provider,
-      apiKeySecretRef: apiKey || null,
-      defaultModel,
-      enabled,
-      monthlyBudgetCents,
-    },
+  const existing = await prisma.aiProviderConfig.findUnique({
+    where: { organizationId_provider: { organizationId: actor.organizationId, provider: providerEnum } },
+  });
+  let parsed: ReturnType<typeof parseAiProviderSettings>;
+  try { parsed = parseAiProviderSettings(formData, existing?.apiKeySecretRef); }
+  catch { redirect("/settings?error=Check+the+secret+reference,+model,+retention+policy+and+budget.+API+keys+must+be+configured+as+deployment+secrets"); }
+  await prisma.$transaction(async (tx) => {
+    if (parsed.enabled) await tx.aiProviderConfig.updateMany({ where: { organizationId: actor.organizationId }, data: { enabled: false } });
+    await tx.aiProviderConfig.upsert({
+      where: { organizationId_provider: { organizationId: actor.organizationId, provider: providerEnum } },
+      update: { ...parsed, displayName: provider },
+      create: { ...parsed, organizationId: actor.organizationId, displayName: provider },
+    });
   });
 
   revalidatePath("/settings");
@@ -1891,13 +1880,14 @@ export async function createConsultationDepositInvoice(quoteId: string) {
 // ─── SMTP email settings ──────────────────────────────────────────────────────
 
 export async function updateSmtpSettings(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
+  const password = String(formData.get("smtpPassword") || "").trim();
   await prisma.organization.update({
-    where: { id: DEFAULT_ORG_ID },
+    where: { id: actor.organizationId },
     data: {
       smtpFromName: String(formData.get("smtpFromName") || ""),
       smtpFromEmail: String(formData.get("smtpFromEmail") || ""),
-      smtpPassword: String(formData.get("smtpPassword") || ""),
+      ...(password ? { smtpPassword: password } : {}),
     },
   });
   revalidatePath("/settings");
@@ -1905,10 +1895,11 @@ export async function updateSmtpSettings(formData: FormData) {
 }
 
 export async function testSmtpConnection(formData: FormData) {
-  await requireStaff();
-  const fromName = String(formData.get("smtpFromName") || "");
-  const fromEmail = String(formData.get("smtpFromEmail") || "");
-  const password = String(formData.get("smtpPassword") || "");
+  const actor = await requireStaff();
+  const saved = await prisma.organization.findUniqueOrThrow({ where: { id: actor.organizationId }, select: { smtpFromName: true, smtpFromEmail: true, smtpPassword: true } });
+  const fromName = saved.smtpFromName;
+  const fromEmail = saved.smtpFromEmail;
+  const password = saved.smtpPassword;
   const testTo = String(formData.get("testTo") || fromEmail);
 
   if (!fromEmail || !password) {
@@ -1928,7 +1919,7 @@ export async function testSmtpConnection(formData: FormData) {
   if (result.sent) {
     redirect("/settings?flash=Test+email+sent+successfully");
   } else {
-    redirect(`/settings?error=${encodeURIComponent("Test failed: " + (result.error ?? "Unknown error") + " — check your App Password and make sure 2-Step Verification is on")}`);
+    redirect("/settings?error=Email+test+failed.+Check+your+saved+Gmail+address,+App+Password+and+2-Step+Verification");
   }
 }
 

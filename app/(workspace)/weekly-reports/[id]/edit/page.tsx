@@ -5,14 +5,17 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization, weeklyReportInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditWeeklyReportPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [report, jobs] = await Promise.all([
-    prisma.weeklyReport.findUniqueOrThrow({ where: { id } }),
-    prisma.job.findMany({ select: { id: true, jobName: true }, orderBy: { jobName: "asc" } })
+    prisma.weeklyReport.findFirst({ where: weeklyReportInOrganization(actor.organizationId, { id }) }),
+    prisma.job.findMany({ where: jobInOrganization(actor.organizationId), select: { id: true, jobName: true }, orderBy: { jobName: "asc" } })
   ]);
+  if (!report) notFound();
   const saveReport = updateWeeklyReport.bind(null, report.id);
 
   return (

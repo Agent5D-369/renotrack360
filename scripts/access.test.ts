@@ -153,7 +153,8 @@ test("every staff entrypoint checks authorization before its body", () => {
       const first = node.body!.statements[0]?.getText(source);
       const expected = file === "app/actions.ts" ? "await requireStaff();" : file.endsWith("page.tsx")
         ? "await requireStaffPage();" : "const denied = await staffApiDenial();";
-      assert.equal(first, expected, `Missing initial access check: ${file}/${node.name?.text}`);
+      const actorCheck = file === "app/actions.ts" ? "const actor = await requireStaff();" : "const actor = await requireStaffPage();";
+      assert.ok(first === expected || (!file.endsWith("route.ts") && first === actorCheck), `Missing initial access check: ${file}/${node.name?.text}`);
       if (file.endsWith("route.ts")) assert.equal(node.body!.statements[1]?.getText(source), "if (denied) return denied;");
       checked++;
     }
