@@ -7,23 +7,23 @@ const CANONICAL_ORIGIN = "https://www.renotrack360.com";
 
 export const metadata: Metadata = {
   title: {
-    default: "Flipside Renovations | Command Center",
-    template: "%s | Flipside Renovations"
+    default: "RenoTrack360 | Renovation Operations",
+    template: "%s | RenoTrack360"
   },
-  description: "Private project operations for Flipside Renovations in Austin.",
+  description: "RenoTrack360 renovation operations. Flipside Renovations is the first rollout.",
   metadataBase: new URL(CANONICAL_ORIGIN),
   alternates: { canonical: "/" },
   openGraph: {
     type: "website",
-    siteName: "Flipside Renovations",
+    siteName: "RenoTrack360",
     url: CANONICAL_ORIGIN,
-    title: "Flipside Renovations | Command Center",
-    description: "Private project operations for Flipside Renovations in Austin."
+    title: "RenoTrack360 | Renovation Operations",
+    description: "RenoTrack360 renovation operations. Flipside Renovations is the first rollout."
   },
   twitter: {
     card: "summary_large_image",
-    title: "Flipside Renovations | Command Center",
-    description: "Private project operations for Flipside Renovations in Austin."
+    title: "RenoTrack360 | Renovation Operations",
+    description: "RenoTrack360 renovation operations. Flipside Renovations is the first rollout."
   },
   robots: {
     index: false,

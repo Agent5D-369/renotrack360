@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
-import Image from "next/image";
-import { FLIPSIDE_LOGO, FLIPSIDE_NAME } from "@/lib/flipside-brand";
+import { FLIPSIDE_NAME } from "@/lib/flipside-brand";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { NavigationProgressIsland } from "@/components/navigation-progress-island";
@@ -41,8 +40,7 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
       <aside className="hidden border-r border-border text-white lg:block lg:min-h-screen" style={{ backgroundColor: sidebarBg }}>
         {/* Logo / brand */}
         <div className="flex min-h-24 items-center gap-3 border-b border-white/10 px-4 py-3">
-          <Image src={FLIPSIDE_LOGO} alt={FLIPSIDE_NAME} width={805} height={639} className="h-auto w-20 shrink-0" />
-          <div className="min-w-0"><p className="text-sm font-bold leading-tight">{FLIPSIDE_NAME}</p><p className="mt-1 text-xs text-white/70">Command Center</p></div>
+          <div className="min-w-0"><p className="text-xl font-bold tracking-tight">RenoTrack360</p><p className="mt-1 text-xs text-white/70">{FLIPSIDE_NAME}</p></div>
         </div>
 
         {/* Navigation */}
@@ -62,7 +60,7 @@ export async function AppShell({ children, uiMode = "POWER" }: { children: React
         {/* Top header bar */}
         <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between border-b border-border bg-white/95 px-4 backdrop-blur-sm md:px-5">
           <p className="text-sm text-muted-foreground">
-            Flipside Renovations · Austin
+            <span className="font-semibold text-foreground lg:hidden">RenoTrack360</span><span className="hidden lg:inline">{FLIPSIDE_NAME} · Austin</span>
           </p>
           <div className="flex items-center gap-4 text-sm">
             <Link href="/guided" className="hidden text-muted-foreground hover:text-foreground md:block">
