@@ -24,6 +24,7 @@ interface AiProviderRuntimeConfig {
 interface AiUsageWrite {
   organizationId: string;
   providerConfigId: string;
+  taskId?: string;
   workflowArea: string;
   model: string;
   inputTokens: number;
@@ -33,7 +34,7 @@ interface AiUsageWrite {
 }
 
 export interface AiRuntimeDependencies {
-  getProvider(): Promise<AiProviderRuntimeConfig | null>;
+  getProvider(organizationId: string): Promise<AiProviderRuntimeConfig | null>;
   getRecordedCostCents(providerId: string): Promise<number>;
   recordUsage(data: AiUsageWrite): Promise<void>;
   fetch: typeof fetch;
@@ -179,9 +180,9 @@ export function resolveAiSecretRef(
   return reference;
 }
 
-export async function getActiveProvider() {
+export async function getActiveProvider(organizationId = DEFAULT_ORG_ID) {
   return prisma.aiProviderConfig.findFirst({
-    where: { organizationId: DEFAULT_ORG_ID, enabled: true, apiKeySecretRef: { not: null } },
+    where: { organizationId, enabled: true, apiKeySecretRef: { not: null } },
     orderBy: { updatedAt: "desc" },
   });
 }
@@ -240,7 +241,7 @@ export async function callLLM(
   prompt: string,
   workflowArea: string,
   maxTokens = 1024,
-  options: { containsClientData?: boolean } = {}
+  options: { containsClientData?: boolean; organizationId?: string; taskId?: string } = {}
 ): Promise<LLMResult> {
   return callLLMWithDependencies(prompt, workflowArea, maxTokens, options, productionDependencies);
 }
@@ -249,14 +250,15 @@ export async function callLLMWithDependencies(
   prompt: string,
   workflowArea: string,
   maxTokens: number,
-  options: { containsClientData?: boolean },
+  options: { containsClientData?: boolean; organizationId?: string; taskId?: string },
   dependencies: AiRuntimeDependencies
 ): Promise<LLMResult> {
   if (!prompt || prompt.length > 50_000 || !/^[a-z0-9-]{1,64}$/.test(workflowArea) || !Number.isInteger(maxTokens) || maxTokens < 1 || maxTokens > 2_048) {
     throw new AiRuntimeError("CONFIGURATION", "AI request configuration is invalid.");
   }
 
-  const provider = await dependencies.getProvider();
+  const organizationId = options.organizationId ?? DEFAULT_ORG_ID;
+  const provider = await dependencies.getProvider(organizationId);
   if (!provider?.apiKeySecretRef) throw new AiRuntimeError("CONFIGURATION", "No AI provider is available.");
   if (options.containsClientData && !provider.allowClientData) {
     throw new AiRuntimeError("CLIENT_DATA_DISABLED", "This provider is not approved for client data.");
@@ -324,8 +326,9 @@ export async function callLLMWithDependencies(
   const estimatedCostCents = tokenCost > 0 ? Math.ceil(tokenCost) : 0;
   try {
     await dependencies.recordUsage({
-      organizationId: DEFAULT_ORG_ID,
+      organizationId,
       providerConfigId: provider.id,
+      taskId: options.taskId,
       workflowArea,
       model,
       inputTokens,

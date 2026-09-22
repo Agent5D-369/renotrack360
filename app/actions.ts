@@ -33,6 +33,8 @@ import {
 import { calculateLineItem, calculateQuoteTotals } from "@/lib/calculations";
 import { allowanceItems, categoryForPhase, exteriorChecks, fieldStandardChecks, garageChecks, roomPresets } from "@/lib/field-estimate-wizard";
 import { createStripePaymentLink } from "@/lib/stripe";
+import { reportGuideCorrectionSchema } from "@/lib/report-guide-brain";
+import { ReportGuideError, reviewGuideTask } from "@/lib/report-guide";
 
 function data(formData: FormData) {
   return Object.fromEntries(formData.entries());
@@ -838,31 +840,72 @@ export async function createEstimateFromQuote(quoteId: string) {
   redirect(`/estimates/${estimate.id}`);
 }
 
+async function retainReportGuideReview(tx: Prisma.TransactionClient, actorId: string, report: { id: string; jobId: string; weekEnding: Date; clientSummary: string | null }, formData: FormData) {
+  const taskId = String(formData.get("guideTaskId") ?? "").trim();
+  const remember = formData.get("guideRememberCorrection") === "on";
+  if (!taskId) {
+    if (remember) throw new ReportGuideError("Apply a guide draft before remembering a correction.");
+    return;
+  }
+  const correction = remember ? reportGuideCorrectionSchema.parse({
+    scope: formData.get("guideCorrectionScope"),
+    category: formData.get("guideCorrectionCategory"),
+    instruction: formData.get("guideCorrectionInstruction"),
+  }) : undefined;
+  await reviewGuideTask(tx, actorId, {
+    taskId, reportId: report.id, jobId: report.jobId,
+    weekEnding: report.weekEnding.toISOString().slice(0, 10),
+    finalSummary: report.clientSummary ?? "", correction,
+  });
+}
+
 export async function createWeeklyReport(formData: FormData) {
   const actor = await requireStaff();
   let parsed: ReturnType<typeof weeklyReportSchema.parse>;
-  try { parsed = weeklyReportSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/weekly-reports/new"); }
+  try { parsed = weeklyReportSchema.parse(nullable(data(formData))); } catch (error) {
+    if (error instanceof ZodError) return { error: error.issues.map(issue => issue.message).join(". ") };
+    throw error;
+  }
   const { assertEntityOwnership } = await import("@/lib/private-media");
   await assertEntityOwnership(prisma, "JOB", parsed.jobId, actor.organizationId);
-  await prisma.weeklyReport.create({ data: parsed });
+  try {
+    await prisma.$transaction(async tx => {
+      const report = await tx.weeklyReport.create({ data: parsed });
+      await retainReportGuideReview(tx, actor.id, report, formData);
+    });
+  } catch (error) {
+    if (error instanceof ReportGuideError) return { error: error.message };
+    if (error instanceof ZodError) return { error: error.issues.map(issue => issue.message).join(". ") };
+    throw error;
+  }
   revalidatePath("/weekly-reports");
-  redirect("/weekly-reports?flash=Report+saved");
+  return { redirectTo: "/weekly-reports?flash=Report+saved" };
 }
 
 export async function updateWeeklyReport(reportId: string, formData: FormData) {
   const actor = await requireStaff();
-  const parsed = weeklyReportSchema.parse(nullable(data(formData)));
+  let parsed: ReturnType<typeof weeklyReportSchema.parse>;
+  try { parsed = weeklyReportSchema.parse(nullable(data(formData))); } catch (error) {
+    if (error instanceof ZodError) return { error: error.issues.map(issue => issue.message).join(". ") };
+    throw error;
+  }
   const { assertEntityOwnership } = await import("@/lib/private-media");
   await assertEntityOwnership(prisma, "WEEKLY_REPORT", reportId, actor.organizationId);
   const existing = await prisma.weeklyReport.findUniqueOrThrow({ where: { id: reportId } });
   if (parsed.jobId !== existing.jobId) throw new Error("A report cannot be moved to another project.");
-  await prisma.weeklyReport.update({
-    where: { id: reportId },
-    data: parsed
-  });
+  try {
+    await prisma.$transaction(async tx => {
+      const report = await tx.weeklyReport.update({ where: { id: reportId }, data: parsed });
+      await retainReportGuideReview(tx, actor.id, report, formData);
+    });
+  } catch (error) {
+    if (error instanceof ReportGuideError) return { error: error.message };
+    if (error instanceof ZodError) return { error: error.issues.map(issue => issue.message).join(". ") };
+    throw error;
+  }
   revalidatePath("/weekly-reports");
   revalidatePath(`/weekly-reports/${reportId}`);
-  redirect(`/weekly-reports/${reportId}?flash=Changes+saved`);
+  return { redirectTo: `/weekly-reports/${reportId}?flash=Changes+saved` };
 }
 
 export async function publishWeeklyReport(reportId: string, reviewedDigest: string) {

@@ -1,16 +1,16 @@
 import { requireStaffPage } from "@/lib/staff-access";
 import Link from "next/link";
 import { updateWeeklyReport } from "@/app/actions";
-import { EntityForm } from "@/components/entity-form";
+import { WeeklyReportForm } from "@/components/weekly-report-form";
 import { PageHeader } from "@/components/page-header";
-import { relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 import { jobInOrganization, weeklyReportInOrganization } from "@/lib/company-scope";
 import { notFound } from "next/navigation";
 
-export default async function EditWeeklyReportPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditWeeklyReportPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<Record<string, string>> }) {
   const actor = await requireStaffPage();
   const { id } = await params;
+  const { error } = await searchParams;
   const [report, jobs] = await Promise.all([
     prisma.weeklyReport.findFirst({ where: weeklyReportInOrganization(actor.organizationId, { id }) }),
     prisma.job.findMany({ where: jobInOrganization(actor.organizationId), select: { id: true, jobName: true }, orderBy: { jobName: "asc" } })
@@ -34,23 +34,19 @@ export default async function EditWeeklyReportPage({ params }: { params: Promise
           </>
         )}
       </div>
-      <EntityForm
-        formKey="weeklyReport"
+      {error && <p role="alert" className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm">{error}</p>}
+      <WeeklyReportForm
+        canRememberCompany={actor.role === "OWNER"}
+        jobs={jobs.filter(job => job.id === report.jobId)}
+        defaultJobId={report.jobId}
+        defaultWeekEnding={report.weekEnding.toISOString().slice(0, 10)}
         action={saveReport}
-        submitLabel="Save report"
-        columns={1}
-        fields={[
-          { name: "jobId", label: "Job", type: "select", options: relationOptions(jobs.map((j) => ({ id: j.id, label: j.jobName }))), defaultValue: report.jobId },
-          { name: "weekEnding", label: "Week ending", type: "date", defaultValue: report.weekEnding.toISOString().slice(0, 10) },
-          { name: "workCompleted", label: "Work completed this week", type: "textarea", defaultValue: report.workCompleted },
-          { name: "clientSummary", label: "Client summary (shown on PDF)", type: "textarea", defaultValue: report.clientSummary ?? "" },
-          { name: "nextWeekPlan", label: "Next week plan", type: "textarea", defaultValue: report.nextWeekPlan ?? "" },
-          { name: "issuesFound", label: "Issues found", type: "textarea", defaultValue: report.issuesFound ?? "" },
-          { name: "decisionsNeeded", label: "Decisions needed", type: "textarea", defaultValue: report.decisionsNeeded ?? "" },
-          { name: "budgetNotes", label: "Budget notes", type: "textarea", defaultValue: report.budgetNotes ?? "" },
-          { name: "scheduleNotes", label: "Schedule notes", type: "textarea", defaultValue: report.scheduleNotes ?? "" },
-          { name: "internalNotes", label: "Internal notes", type: "textarea", defaultValue: report.internalNotes ?? "" }
-        ]}
+        defaultValues={{
+          workCompleted: report.workCompleted, clientSummary: report.clientSummary ?? "",
+          nextWeekPlan: report.nextWeekPlan ?? "", issuesFound: report.issuesFound ?? "",
+          decisionsNeeded: report.decisionsNeeded ?? "", budgetNotes: report.budgetNotes ?? "",
+          scheduleNotes: report.scheduleNotes ?? "", internalNotes: report.internalNotes ?? "",
+        }}
       />
     </>
   );

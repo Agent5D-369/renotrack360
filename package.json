@@ -33,7 +33,8 @@
     "test:payments": "node scripts/test-access.mjs payments",
     "test:financial-review": "node scripts/test-access.mjs financial-review",
     "test:ai": "tsx --test scripts/ai.test.ts",
-    "test:milestone-billing": "node scripts/test-access.mjs milestone-billing"
+    "test:milestone-billing": "node scripts/test-access.mjs milestone-billing",
+    "test:report-guide": "node scripts/test-access.mjs report-guide"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",

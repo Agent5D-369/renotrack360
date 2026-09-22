@@ -11,7 +11,7 @@ export default async function NewWeeklyReportPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const actor = await requireStaffPage();
-  const { jobId: defaultJobId = "" } = await searchParams;
+  const { jobId: defaultJobId = "", error } = await searchParams;
   const jobs = await prisma.job.findMany({
     select: { id: true, jobName: true },
     where: jobInOrganization(actor.organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }),
@@ -30,7 +30,9 @@ export default async function NewWeeklyReportPage({
         title="Write weekly report"
         body="Client-facing update for remote owners and investors. Use AI to draft the client summary from your field notes."
       />
+      {error && <p role="alert" className="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm">{error}</p>}
       <WeeklyReportForm
+        canRememberCompany={actor.role === "OWNER"}
         jobs={jobs}
         defaultJobId={defaultJobId}
         defaultWeekEnding={defaultWeekEnding}

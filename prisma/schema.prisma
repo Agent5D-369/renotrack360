@@ -1482,11 +1482,16 @@ model AiAgent {
   roleName       String
   purpose        String   @db.Text
   guardrails     String?  @db.Text
+  workflowKey    String?
+  configVersion  Int      @default(1)
+  configuration  Json?
   active         Boolean  @default(true)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   tasks          AiTask[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@unique([organizationId, workflowKey])
 }
 
 model AiProviderConfig {
@@ -1543,6 +1548,17 @@ model AiTask {
   status         AiTaskStatus @default(QUEUED)
   prompt         String       @db.Text
   resultSummary  String?      @db.Text
+  workflowKey    String?
+  requestId      String?
+  actorId        String?
+  inputDigest    String?
+  sourceDigest   String?
+  context        Json?
+  draft          Json?
+  reviewMetadata Json?
+  reviewedAt     DateTime?
+  reviewedById   String?
+  finalSummary   String?      @db.Text
   humanReviewRequired Boolean @default(true)
   dueDate        DateTime?
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1550,6 +1566,9 @@ model AiTask {
   usageLogs      AiUsageLog[]
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, requestId])
+  @@index([organizationId, workflowKey, status])
 }
 
 model RenovationPhase {
