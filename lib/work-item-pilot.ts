@@ -1,0 +1,44 @@
+import { createHash } from "node:crypto";
+import { z } from "zod";
+
+const evidenceSchema = z.object({ key: z.string().min(1), label: z.string().min(1), kind: z.enum(["PHOTO", "RECORD", "REVIEW"]), required: z.literal(true) });
+export const workItemSchema = z.object({
+  templateCode: z.string().min(1), name: z.string().min(1), edition: z.string().min(1),
+  purpose: z.string().min(1), scope: z.array(z.string()).min(1), exclusions: z.array(z.string()).min(1),
+  assumptions: z.array(z.string()).min(1), costInputs: z.array(z.string()).min(1),
+  reviewerPolicy: z.string().min(1), source: z.object({ title: z.string(), url: z.string().url(), edition: z.string(), retrievedAt: z.string(), sha256: z.string().regex(/^[a-f0-9]{64}$/), pages: z.string() }),
+  steps: z.array(z.object({ key: z.string().min(1), title: z.string().min(1), instructions: z.string().min(1),
+    holdPoint: z.boolean(), condition: z.string().nullable(), evidence: z.array(evidenceSchema).min(1) })).min(1),
+}).superRefine((value, ctx) => {
+  const keys = value.steps.map(step => step.key);
+  const evidence = value.steps.flatMap(step => step.evidence.map(item => item.key));
+  if (new Set(keys).size !== keys.length || new Set(evidence).size !== evidence.length) ctx.addIssue({ code: "custom", message: "Step and evidence identifiers must be unique." });
+});
+export type WorkItemContent = z.infer<typeof workItemSchema>;
+const evidence = (key: string, label: string, kind: "PHOTO" | "RECORD" | "REVIEW") => ({ key, label, kind, required: true as const });
+
+// An internal scope/QC plan with source pointers, not a substitute installation manual.
+export const showerPilot: WorkItemContent = workItemSchema.parse({
+  templateCode: "FS-SHOWER-KERDI-CURBED", name: "Curbed shower waterproofing", edition: "2026-09-21-v1",
+  purpose: "Internal planning template. Adoption retains this plan; each job still needs site-specific scope, qualified installation and documented acceptance.",
+  scope: ["Matched Schluter KERDI membrane system, standard prefabricated tray, compatible curb and standard KERDI-DRAIN for a residential non-steam shower.", "Substrate and drain readiness review, waterproofing, pre-cover evidence, water-test record and QC handoff before tile."],
+  exclusions: ["Tile, grout, finish fixtures and glass; demolition, structural repair and plumbing relocation unless separately scoped.", "Curbless or steam showers, mortar-bed bases, horizontal or adapter drains, mixed-manufacturer assemblies and other unreviewed substitutions."],
+  assumptions: ["Measure the actual site before ordering or pricing; resolve concealed damage through a documented scope change.", "Verify the current manufacturer instructions and applicable project inspection requirements before work. Stop and obtain a reviewed variation when this configuration does not fit.", "Rick is accountable for Flipside QC. Record the actual competent installer and any required licensed-trade or authority reviewer for this job."],
+  costInputs: ["Measured membrane area, seam/corner/penetration quantities and specified compatible products, including waste and freight.", "Actual tray, curb and drain selection; current supplier quote and its date.", "Separate field installation, preparation, return-visit and PM/QC hours at documented replacement rates; do not double-count hours.", "Protection, disposal, testing and any required trade/permit costs. Apply documented risk before the target gross margin; no default material price or production-hour allowance is invented."],
+  reviewerPolicy: "Rick: accountable Flipside QC. Installer competence, trade responsibility and applicable inspection signoffs must be recorded per job. Template adoption is not manufacturer certification, a site inspection or permission to cover failed work.",
+  source: { title: "Schluter Shower System Installation Handbook", url: "https://assets.schluter.com/asset/570120892212/document_i2tt9fh4sp2n562jmirhppbv4o/shower-system-installation-handbook.pdf?content-disposition=inline", edition: "04/2026", retrievedAt: "2026-09-21", sha256: "6c7259896f8fab7d34e54a2b4eff307a1f35c12be96e574cacad95a0f8921ea5", pages: "6-7, 22, 24; consult the full handbook for the selected components" },
+  steps: [
+    { key: "site-release", title: "Confirm scope and responsible people", holdPoint: true, condition: null, instructions: "Record dimensions, selected configuration, installer competence, required inspections and named QC responsibility. Resolve exclusions and open design issues before releasing work.", evidence: [evidence("site-plan", "Measured scope, products and responsible people", "RECORD"), evidence("site-release", "Readiness review and unresolved-issue disposition", "REVIEW")] },
+    { key: "substrate", title: "Inspect preparation and substrate", holdPoint: true, condition: null, instructions: "Document substrate condition and suitability against the selected handbook detail. Resolve damage, support, level and required drainage slopes before installation.", evidence: [evidence("substrate-photos", "Wide and detail photos before membrane", "PHOTO"), evidence("substrate-review", "Recorded measurements and substrate acceptance", "REVIEW")] },
+    { key: "drain-plan", title: "Confirm drain access and connection sequence", holdPoint: true, condition: null, instructions: "Record whether the waste connection is accessible from below and follow the corresponding order in handbook page 24. Verify the trade responsibility and connection test required for this site.", evidence: [evidence("drain-access", "Access route, connection plan and responsible trade", "RECORD")] },
+    { key: "drain-before", title: "Connect drain before tray where access requires it", holdPoint: true, condition: "Required when there is no access from below. Otherwise record the access-based reason for skipping this branch.", instructions: "Complete and document the applicable drain connection before the tray blocks access, following the selected component instructions and inspection requirements.", evidence: [evidence("drain-before-record", "Connection and required test/inspection record, or reviewed branch exclusion", "REVIEW")] },
+    { key: "system-install", title: "Install the selected matched system", holdPoint: false, condition: null, instructions: "Use the selected handbook assembly and approved compatible materials. Where access remains below, complete the drain connection in its applicable sequence. Record actual products and any deviation before proceeding.", evidence: [evidence("product-record", "Product identifiers, batch/date where available and installed configuration", "RECORD"), evidence("installation-photos", "Tray, curb, drain and wall installation before concealment", "PHOTO")] },
+    { key: "pre-cover", title: "Review waterproofing before covering", holdPoint: true, condition: null, instructions: "Review membrane coverage, seams, corners, penetrations and drain transitions against the selected details. Record required overlaps and slopes. Keep each failed or uncertain item open until corrected and re-reviewed.", evidence: [evidence("detail-photos", "Labeled seams, corners, penetrations and drain details", "PHOTO"), evidence("pre-cover-review", "QC findings, measurements and correction acceptance", "REVIEW")] },
+    { key: "cure", title: "Record curing readiness for testing", holdPoint: true, condition: null, instructions: "Record completion time and conditions. Allow at least 24 hours after KERDI installation before water testing under normal conditions, and longer when conditions or product instructions require it.", evidence: [evidence("cure-log", "Installation finish, conditions and earliest permitted test time", "RECORD")] },
+    { key: "water-test", title: "Document the water test", holdPoint: true, condition: null, instructions: "Use the manufacturer test guidance and applicable inspection requirements. Record plug check, marked water level, start/end times, observations and results. A failed or inconclusive result requires correction and a new documented test before release.", evidence: [evidence("water-test-photos", "Dated start and end water-level evidence", "PHOTO"), evidence("water-test-record", "Test duration, observations, result and required inspection", "RECORD")] },
+    { key: "tile-release", title: "Accept the record before tile", holdPoint: true, condition: null, instructions: "Rick or the recorded authorized QC reviewer checks the evidence and issue resolution, plus any required authority acceptance. Record the release decision before tile starts; a checklist alone is not proof of acceptance.", evidence: [evidence("final-qc", "Named reviewer, date, evidence reviewed and release decision", "REVIEW")] },
+  ],
+});
+export function workItemDigest(content: WorkItemContent) {
+  return createHash("sha256").update(JSON.stringify(workItemSchema.parse(content))).digest("hex");
+}

@@ -509,6 +509,7 @@ model Organization {
   quotes             Quote[]
   costCatalogItems   CostCatalogItem[]
   priceSnapshots     PriceSnapshot[]
+  workItemVersions   WorkItemVersion[]
   costAssemblies     CostAssembly[]
   marketCostFactors  MarketCostFactor[]
   laborRates         LaborRate[]
@@ -2276,4 +2277,21 @@ model TranslationRecord {
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
+}
+
+model WorkItemVersion {
+  id String @id @default(cuid())
+  organizationId String
+  templateCode String
+  revision Int
+  name String
+  contentDigest String
+  content Json
+  adoptedById String
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+
+  @@unique([organizationId, templateCode, revision])
+  @@unique([organizationId, templateCode, contentDigest])
+  @@index([organizationId, createdAt])
 }

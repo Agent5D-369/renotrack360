@@ -5,7 +5,7 @@ import { postgresImage } from './preservation.mjs';
 import { prisma } from './baseline-existing.mjs';
 
 const suite = process.argv[2] || 'access';
-if (!['access', 'media', 'reports', 'pricing'].includes(suite)) throw new Error('Unknown disposable test suite.');
+if (!['access', 'media', 'reports', 'pricing', 'work-items'].includes(suite)) throw new Error('Unknown disposable test suite.');
 const database = 'flipside_migration_' + suite;
 const name = `flipside-${suite}-test-` + randomBytes(6).toString('hex');
 const password = randomBytes(24).toString('hex');

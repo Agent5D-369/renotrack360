@@ -1999,3 +1999,15 @@ export async function testSmtpConnection(formData: FormData) {
     redirect(`/settings?error=${encodeURIComponent("Test failed: " + (result.error ?? "Unknown error") + " — check your App Password and make sure 2-Step Verification is on")}`);
   }
 }
+
+export async function adoptWorkItemPilot(formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { adoptShowerPilot, WorkItemError } = await import("@/lib/work-item-version");
+  if (formData.get("planningAcknowledged") !== "on") redirect("/service-templates/work-items?error=Review+the+planning+acknowledgment+first");
+  let id: string;
+  try { id = (await adoptShowerPilot(prisma, actor.id, String(formData.get("reviewedDigest") || ""))).id; }
+  catch (error) { if (error instanceof WorkItemError) redirect("/service-templates/work-items?error=" + encodeURIComponent(error.message)); throw error; }
+  revalidatePath("/service-templates/work-items");
+  redirect("/service-templates/work-items/" + id);
+}
