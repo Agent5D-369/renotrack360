@@ -33,20 +33,20 @@ test('issuance requires owner, exact reviewed price and owned PDF; retries, repl
  const a=await fixture(),b=await fixture();
  for(const [who,change]of [['proposal-admin',{}],['foreign-owner',{}],[actor.id,{sourceFileId:b.file.id}],[actor.id,{priceSnapshotId:'missing'}],[actor.id,{reviewedDigest:'a'.repeat(64)}],[actor.id,{requiredDeposit:'1001'}]] as const)await assert.rejects(()=>issueEstimateApproval(db,who,a.estimate.id,{...a.input,...change},root));
  const links=await Promise.all([1,2,3].map(()=>issueEstimateApproval(db,actor.id,a.estimate.id,a.input,root)));assert.equal(new Set(links.map(x=>x.id)).size,1);
- const next=await issueEstimateApproval(db,actor.id,a.estimate.id,{...a.input,requestId:randomUUID()},root);await assert.rejects(()=>readEstimateApproval(db,links[0].token),/expired/);
- assert.equal((await estimateApprovalDocument(db,next.token,root)).asset.id,a.file.id);
- await db.estimate.update({where:{id:a.estimate.id},data:{total:'999'}});await assert.rejects(()=>readEstimateApproval(db,next.token),/changed/);
+ const next=await issueEstimateApproval(db,actor.id,a.estimate.id,{...a.input,requestId:randomUUID()},root);await assert.rejects(()=>readEstimateApproval(db,links[0].token!),/expired/);
+ assert.equal((await estimateApprovalDocument(db,next.token!,root)).asset.id,a.file.id);
+ await db.estimate.update({where:{id:a.estimate.id},data:{total:'999'}});await assert.rejects(()=>readEstimateApproval(db,next.token!),/changed/);
  await db.estimate.update({where:{id:a.estimate.id},data:{total:'1000'}});
- await db.user.update({where:{id:actor.id},data:{role:'ADMIN'}});try{await assert.rejects(()=>readEstimateApproval(db,next.token),/current owner/);}finally{await db.user.update({where:{id:actor.id},data:{role:'OWNER'}});}
+ await db.user.update({where:{id:actor.id},data:{role:'ADMIN'}});try{await assert.rejects(()=>readEstimateApproval(db,next.token!),/current owner/);}finally{await db.user.update({where:{id:actor.id},data:{role:'OWNER'}});}
  const bytes=await readFile(storagePath(root,a.file.storageKey!));await writeFile(storagePath(root,a.file.storageKey!),'tampered');
- try{await assert.rejects(()=>estimateApprovalDocument(db,next.token,root));}finally{await writeFile(storagePath(root,a.file.storageKey!),bytes);}
+ try{await assert.rejects(()=>estimateApprovalDocument(db,next.token!,root));}finally{await writeFile(storagePath(root,a.file.storageKey!),bytes);}
 });
 test('client acceptance and owner conversion happen once at the retained price; baseline and later edits respect accepted terms',async()=>{
- const f=await fixture(),link=await issueEstimateApproval(db,actor.id,f.estimate.id,f.input,root),input=await response(link.token);
- await assert.rejects(()=>decideEstimateApproval(db,link.token,{...input,reviewedDigest:'a'.repeat(64)},root,null),/does not match/);
+ const f=await fixture(),link=await issueEstimateApproval(db,actor.id,f.estimate.id,f.input,root),input=await response(link.token!);
+ await assert.rejects(()=>decideEstimateApproval(db,link.token!,{...input,reviewedDigest:'a'.repeat(64)},root,null),/does not match/);
  await assert.rejects(()=>convertAcceptedEstimate(db,actor.id,f.estimate.id),/acceptance/);
- const decisions=await Promise.all([1,2,3].map(()=>decideEstimateApproval(db,link.token,input,root,null)));assert.equal(decisions.filter(r=>!r.alreadyRecorded).length,1);
- await assert.rejects(()=>decideEstimateApproval(db,link.token,{...input,decision:'declined'},root,null),/different response/);
+ const decisions=await Promise.all([1,2,3].map(()=>decideEstimateApproval(db,link.token!,input,root,null)));assert.equal(decisions.filter(r=>!r.alreadyRecorded).length,1);
+ await assert.rejects(()=>decideEstimateApproval(db,link.token!,{...input,decision:'declined'},root,null),/different response/);
  await assert.rejects(()=>convertAcceptedEstimate(db,'proposal-admin',f.estimate.id),/owner/);
  await db.estimate.update({where:{id:f.estimate.id},data:{total:'9999'}});
  const jobs=await Promise.all([1,2,3].map(()=>convertAcceptedEstimate(db,actor.id,f.estimate.id)));assert.equal(new Set(jobs.map(j=>j.id)).size,1);const job=jobs[0];
@@ -64,9 +64,9 @@ test('client acceptance and owner conversion happen once at the retained price; 
 test('decline creates no acceptance; failed audit rolls acceptance and issuance back',async()=>{
  const f=await fixture(),link=await issueEstimateApproval(db,actor.id,f.estimate.id,f.input,root);
  await db.$executeRawUnsafe(`ALTER TABLE "AuditEvent" ADD CONSTRAINT proposal_test_block CHECK (action <> 'ESTIMATE_CLIENT_RESPONSE') NOT VALID`);
- try{await assert.rejects(async()=>decideEstimateApproval(db,link.token,await response(link.token),root,null));}finally{await db.$executeRawUnsafe('ALTER TABLE "AuditEvent" DROP CONSTRAINT proposal_test_block');}
- assert.equal(await db.estimateAcceptance.count({where:{estimateId:f.estimate.id}}),0);assert.equal((await readEstimateApproval(db,link.token)).approval.status,'SENT');
- await decideEstimateApproval(db,link.token,await response(link.token,'declined'),root,null);assert.equal(await db.estimateAcceptance.count({where:{estimateId:f.estimate.id}}),0);
+ try{await assert.rejects(async()=>decideEstimateApproval(db,link.token!,await response(link.token!),root,null));}finally{await db.$executeRawUnsafe('ALTER TABLE "AuditEvent" DROP CONSTRAINT proposal_test_block');}
+ assert.equal(await db.estimateAcceptance.count({where:{estimateId:f.estimate.id}}),0);assert.equal((await readEstimateApproval(db,link.token!)).approval.status,'SENT');
+ await decideEstimateApproval(db,link.token!,await response(link.token!,'declined'),root,null);assert.equal(await db.estimateAcceptance.count({where:{estimateId:f.estimate.id}}),0);
  await assert.rejects(()=>convertAcceptedEstimate(db,actor.id,f.estimate.id),/acceptance/);
  const other=await fixture();await db.$executeRawUnsafe(`ALTER TABLE "AuditEvent" ADD CONSTRAINT proposal_issue_block CHECK (action <> 'ESTIMATE_APPROVAL_ISSUED') NOT VALID`);
  try{await assert.rejects(()=>issueEstimateApproval(db,actor.id,other.estimate.id,other.input,root));}finally{await db.$executeRawUnsafe('ALTER TABLE "AuditEvent" DROP CONSTRAINT proposal_issue_block');}
