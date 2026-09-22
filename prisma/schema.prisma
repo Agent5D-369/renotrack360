@@ -478,6 +478,8 @@ model WaitlistEntry {
 
 model Organization {
   costSourceVersions CostSourceVersion[]
+  scopeItems ScopeItem[]
+
   id                 String   @id @default(cuid())
   name               String   @default("RenoTrack360")
   address            String?
@@ -1078,6 +1080,8 @@ model ActualCost {
 }
 
 model Job {
+  scopeItems ScopeItem[]
+
   id               String      @id @default(cuid())
   organizationId   String
   organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
@@ -1546,6 +1550,8 @@ model AiTask {
 }
 
 model RenovationPhase {
+  workPackages WorkPackage[]
+
   id                 String      @id @default(cuid())
   jobId              String
   phaseNumber        Int
@@ -1627,6 +1633,8 @@ model WeeklyReportPublication {
 model PriceSnapshot {
   costSourceVersionId String?
   costSourceVersion CostSourceVersion? @relation(fields: [costSourceVersionId], references: [id], onDelete: Restrict)
+  scopeItems ScopeItem[]
+
   changeOrders ChangeOrder[]
   id                    String   @id @default(cuid())
   organizationId        String
@@ -1861,6 +1869,9 @@ model Activity {
 }
 
 model FileAsset {
+  scopeItems ScopeItem[]
+  executionEvidence ExecutionEvidence[]
+
   financialBaselines JobFinancialBaseline[]
   id              String         @id @default(cuid())
   entityType      FileEntityType
@@ -2304,6 +2315,8 @@ model TranslationRecord {
 }
 
 model WorkItemVersion {
+  scopeItems ScopeItem[]
+
   id String @id @default(cuid())
   organizationId String
   templateCode String
@@ -2442,3 +2455,83 @@ model CostSourceVersion {
   @@index([organizationId, kind, category])
   @@index([organizationId, sourceKey, importedAt])
 }
+
+model ScopeItem {
+  id String @id @default(cuid())
+  organizationId String
+  jobId String
+  requestId String
+  inputDigest String
+  sourceLineRef String
+  sourceFileId String
+  sourceSha256 String
+  workItemVersionId String
+  priceSnapshotId String
+  content Json
+  amount Decimal @db.Decimal(14, 2)
+  reviewedById String
+  createdAt DateTime @default(now())
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Restrict)
+  job Job @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  sourceFile FileAsset @relation(fields: [sourceFileId], references: [id], onDelete: Restrict)
+  workItemVersion WorkItemVersion @relation(fields: [workItemVersionId], references: [id], onDelete: Restrict)
+  priceSnapshot PriceSnapshot @relation(fields: [priceSnapshotId], references: [id], onDelete: Restrict)
+  workPackage WorkPackage?
+  @@unique([organizationId, requestId])
+  @@unique([jobId, sourceLineRef])
+}
+model WorkPackage {
+  id String @id @default(cuid())
+  scopeItemId String @unique
+  phaseId String
+  createdById String
+  createdAt DateTime @default(now())
+  scopeItem ScopeItem @relation(fields: [scopeItemId], references: [id], onDelete: Restrict)
+  phase RenovationPhase @relation(fields: [phaseId], references: [id], onDelete: Restrict)
+  steps WorkStepInstance[]
+}
+model WorkStepInstance {
+  id String @id @default(cuid())
+  workPackageId String
+  position Int
+  templateKey String
+  definition Json
+  workPackage WorkPackage @relation(fields: [workPackageId], references: [id], onDelete: Restrict)
+  evidence ExecutionEvidence[]
+  reviews WorkStepReview[]
+  @@unique([workPackageId, position])
+  @@unique([workPackageId, templateKey])
+}
+model ExecutionEvidence {
+  id String @id @default(cuid())
+  stepId String
+  requestId String @unique
+  inputDigest String
+  requirementKey String
+  notes String @db.Text
+  sourceFileId String?
+  sourceSha256 String?
+  submittedById String
+  submittedByName String
+  createdAt DateTime @default(now())
+  step WorkStepInstance @relation(fields: [stepId], references: [id], onDelete: Restrict)
+  sourceFile FileAsset? @relation(fields: [sourceFileId], references: [id], onDelete: Restrict)
+  @@index([stepId, createdAt])
+}
+model WorkStepReview {
+  id String @id @default(cuid())
+  stepId String
+  sequence Int
+  requestId String @unique
+  inputDigest String
+  evidenceDigest String
+  prerequisiteDigest String
+  outcome String
+  reason String @db.Text
+  reviewedById String
+  reviewedByName String
+  createdAt DateTime @default(now())
+  step WorkStepInstance @relation(fields: [stepId], references: [id], onDelete: Restrict)
+  @@unique([stepId, sequence])
+}
+

@@ -1209,6 +1209,7 @@ export async function deleteProfileRelationship(formData: FormData) {
 
 export async function reseedJobPhases(jobId: string) {
   await requireStaff();
+  if (await prisma.workPackage.count({ where: { scopeItem: { jobId } } })) redirect(`/jobs/${jobId}?error=Retained+work+packages+prevent+phase+reset`);
   await prisma.renovationPhase.deleteMany({ where: { jobId } });
   await prisma.renovationPhase.createMany({
     data: renovationPhaseDetails.map(([phaseName, description], index) => ({
@@ -1872,13 +1873,11 @@ export async function updatePhaseStatus(formData: FormData) {
   const phaseId = String(formData.get("phaseId") || "");
   const status = String(formData.get("status") || "");
   const jobId = String(formData.get("jobId") || "");
-  await prisma.renovationPhase.update({
-    where: { id: phaseId },
-    data: {
-      status: status as Parameters<typeof prisma.renovationPhase.update>[0]["data"]["status"],
-      completionDate: status === "COMPLETE" ? new Date() : undefined,
-    },
-  });
+  const actor = await requireStaff();
+  const { setReviewedPhaseStatus } = await import("@/lib/work-package");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await setReviewedPhaseStatus(prisma, actor.id, jobId, phaseId, status); }
+  catch (error) { if (error instanceof FinancialRecordError) redirect("/jobs/" + jobId + "?error=" + encodeURIComponent(error.message)); throw error; }
   revalidatePath(`/jobs/${jobId}`);
 }
 
@@ -1998,4 +1997,50 @@ export async function reviewJobFinancialBaseline(jobId: string, formData: FormDa
   revalidatePath("/jobs", "layout");
   revalidatePath("/payments/reconciliation");
   redirect("/jobs/" + jobId + "/financial-review?flash=Reviewed+baseline+retained");
+}
+
+export async function adoptJobScopePackage(jobId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { adoptScopePackage } = await import("@/lib/work-package");
+  const { storageRoot, MediaError } = await import("@/lib/private-media");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  let id: string;
+  try { const result = await adoptScopePackage(prisma, actor.id, jobId, { ...Object.fromEntries(formData), approvedScopeVerified: formData.get("approvedScopeVerified") === "on" }, await storageRoot()); id = result.id; }
+  catch (error) { if (error instanceof FinancialRecordError || error instanceof MediaError) redirect(`/jobs/${jobId}/work-packages?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath(`/jobs/${jobId}`); revalidatePath(`/jobs/${jobId}/work-packages`);
+  redirect(`/work-packages/${id}?flash=Scope+retained+and+ordered+work+generated`);
+}
+export async function addWorkStepEvidence(packageId: string, stepId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { submitStepEvidence } = await import("@/lib/work-package");
+  const { storageRoot, MediaError } = await import("@/lib/private-media");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await submitStepEvidence(prisma, actor.id, packageId, stepId, Object.fromEntries(formData), await storageRoot()); }
+  catch (error) { if (error instanceof FinancialRecordError || error instanceof MediaError) redirect(`/work-packages/${packageId}?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath(`/work-packages/${packageId}`); redirect(`/work-packages/${packageId}?flash=Evidence+retained`);
+}
+export async function recordWorkStepReview(packageId: string, stepId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { reviewWorkStep } = await import("@/lib/work-package");
+  const { storageRoot, MediaError } = await import("@/lib/private-media");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try { await reviewWorkStep(prisma, actor.id, packageId, stepId, Object.fromEntries(formData), await storageRoot()); }
+  catch (error) { if (error instanceof FinancialRecordError || error instanceof MediaError) redirect(`/work-packages/${packageId}?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath(`/work-packages/${packageId}`); revalidatePath("/jobs"); redirect(`/work-packages/${packageId}?flash=Human+review+retained`);
+}
+export async function uploadWorkPackageEvidence(packageId: string, formData: FormData) {
+  await requireStaff();
+  const actor = await requireStaff();
+  const { getOwnedPackage } = await import("@/lib/work-package");
+  const { createPrivateAsset, storageRoot, MediaError } = await import("@/lib/private-media");
+  const { FinancialRecordError } = await import("@/lib/finance-lock");
+  try {
+    const work = await getOwnedPackage(prisma, packageId), file = formData.get("file");
+    if (!(file instanceof File)) throw new MediaError("Choose a photo or PDF.");
+    await createPrivateAsset(prisma, actor, { entityType: "JOB", entityId: work.scopeItem.jobId, file, notes: "Work package evidence upload; link it to its actual step before review." }, await storageRoot());
+  } catch (error) { if (error instanceof FinancialRecordError || error instanceof MediaError) redirect(`/work-packages/${packageId}?error=` + encodeURIComponent(error.message)); throw error; }
+  revalidatePath(`/work-packages/${packageId}`); redirect(`/work-packages/${packageId}?flash=Private+file+retained.+Assign+it+to+the+correct+step`);
 }

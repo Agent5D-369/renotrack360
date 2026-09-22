@@ -3,6 +3,7 @@ import { staffApiDenial } from "@/lib/staff-access";
 ﻿import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
+import { packageStatusSelect, phaseWithPackageEvidence } from "@/lib/work-package";
 import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { money } from "@/lib/format";
 
@@ -14,7 +15,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     const job = await prisma.job.findFirstOrThrow({
       where: { id, organizationId: DEFAULT_ORG_ID },
       include: {
-        phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: true } },
+        phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: true, workPackages: { select: packageStatusSelect } } },
         weeklyReports: { orderBy: { weekEnding: "asc" } },
         changeOrders: { orderBy: { createdAt: "asc" } },
         invoices: { where: { status: { not: "VOID" } }, orderBy: { dueDate: "asc" } },
@@ -28,18 +29,9 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
     const org = job.organization;
     const openChangeOrders = job.changeOrders.filter((co) => ["DRAFT", "SENT"].includes(co.status));
     const totalBalance = job.invoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);
-    const phasesDone = job.phases.filter((p) =>
-      p.tasks.length ? p.tasks.every((t) => t.status === "COMPLETE") : p.status === "COMPLETE"
-    ).length;
-    const phaseStatuses = job.phases.map((phase) => {
-      const status = phase.tasks.length
-        ? phase.tasks.every((t) => t.status === "COMPLETE") ? "Complete"
-        : phase.tasks.some((t) => t.status === "BLOCKED") ? "Blocked"
-        : phase.tasks.some((t) => t.status === "IN_PROGRESS") ? "In progress"
-        : "Not started"
-        : phase.status.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
-      return `${String(phase.phaseNumber).padStart(2, "0")}. ${phase.phaseName} - ${status}`;
-    }).join("\n");
+    const phaseState = (phase: typeof job.phases[number]) => phaseWithPackageEvidence(phase.tasks.length ? phase.tasks.every(t => t.status === "COMPLETE") ? "COMPLETE" : phase.tasks.some(t => t.status === "BLOCKED") ? "BLOCKED" : phase.tasks.some(t => t.status === "IN_PROGRESS") ? "IN_PROGRESS" : "NOT_STARTED" : phase.status, phase.workPackages);
+    const phasesDone = job.phases.filter(phase => phaseState(phase) === "COMPLETE").length;
+    const phaseStatuses = job.phases.map(phase => String(phase.phaseNumber).padStart(2, "0") + ". " + phase.phaseName + " - " + phaseState(phase).replaceAll("_", " ")).join("\n");
 
     const changeOrderSummary = job.changeOrders.length
       ? job.changeOrders.map((co) => `${co.changeOrderTitle}: ${money(co.addedCost)} (${co.status.toLowerCase()})`).join("\n")

@@ -137,6 +137,8 @@ export async function decideChangeApproval(db: PrismaClient, token: string, raw:
       if (!totals) throw new ChangeApprovalError("The project needs financial review before this change can be applied.", 409);
       const contract = totals.contract.plus(content.addedCost);
       if (contract.lt(0) || contract.gt("9999999999.99")) throw new ChangeApprovalError("This change needs a corrected contract calculation.", 409);
+      const mappedScope = (await tx.scopeItem.aggregate({ where: { jobId: snapshot.jobId }, _sum: { amount: true } }))._sum.amount;
+      if (mappedScope && contract.lt(mappedScope)) throw new ChangeApprovalError("This credit conflicts with retained work scope. Resolve the scope adjustment before applying it.", 409);
       await tx.appliedChangeOrder.create({ data: { organizationId: snapshot.organizationId, jobId: snapshot.jobId, changeOrderId: snapshot.changeOrderId, snapshotId: snapshot.id, amount: content.addedCost, addedDays: content.addedTime, signerName: input.signerName } });
       await tx.job.update({ where: { id: snapshot.jobId }, data: { contractAmount: contract, balanceDue: contract.minus(totals.paid) } });
       await tx.changeOrder.update({ where: { id: snapshot.changeOrderId }, data: { status: "APPROVED", approvedDate: now } });

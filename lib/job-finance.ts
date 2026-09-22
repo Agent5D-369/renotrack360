@@ -107,6 +107,11 @@ export async function saveJobDetails(db: PrismaClient, actorId: string, jobId: s
       if (!record || record.organizationId !== organizationId) throw new FinancialRecordError("A linked job record belongs to another organization.");
     }
     const contractAmount = reviewed?.contract ?? new Prisma.Decimal(input.contractAmount), amountPaid = reviewed?.paid ?? new Prisma.Decimal(input.amountPaid);
+    if (input.jobStatus === "COMPLETE") {
+      const { packageStatusSelect, orderedReviewState } = await import("./work-package");
+      const packages = await tx.workPackage.findMany({ where: { scopeItem: { jobId } }, select: packageStatusSelect });
+      if (packages.some(work => orderedReviewState(work.steps).some(step => !step.done))) throw new FinancialRecordError("Resolve all package evidence and hold points before closing the job.");
+    }
     const updated = await tx.job.update({ where: { id: jobId }, data: { ...input, contractAmount, amountPaid, balanceDue: contractAmount.minus(amountPaid), jobStatus: input.jobStatus as Prisma.JobUpdateInput["jobStatus"], riskLevel: input.riskLevel as Prisma.JobUpdateInput["riskLevel"] } });
     await tx.auditEvent.create({ data: { organizationId, actorUserId: actorId, action: "JOB_DETAILS_UPDATED", entityType: "Job", entityId: jobId,
       metadata: { before: { contract: job.contractAmount.toString(), paid: job.amountPaid.toString(), status: job.jobStatus }, after: { contract: contractAmount.toString(), paid: amountPaid.toString(), status: updated.jobStatus }, reviewedLedger: Boolean(reviewed) } } });

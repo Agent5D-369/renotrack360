@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { packageStatusSelect, phaseWithPackageEvidence } from "@/lib/work-package";
 import { dateShort, money } from "@/lib/format";
 import { ClientRequestForm } from "@/components/client-request-form";
 import { ClientBrandHeader } from "@/components/client-brand-header";
@@ -22,7 +23,7 @@ export default async function ClientPortalPage({
       organization: true,
       phases: {
         orderBy: { phaseNumber: "asc" },
-        include: { tasks: true },
+        include: { tasks: true, workPackages: { select: packageStatusSelect } },
       },
       selectionSheets: {
         include: {
@@ -80,10 +81,8 @@ export default async function ClientPortalPage({
 
   // Phase progress — derive effective status per phase
   function phaseEffectiveStatus(p: NonNullable<typeof job>["phases"][number]) {
-    if (p.tasks.length === 0) return p.status;
-    if (p.tasks.every((t) => t.status === "COMPLETE")) return "COMPLETE";
-    if (p.tasks.some((t) => t.status === "IN_PROGRESS")) return "IN_PROGRESS";
-    return "NOT_STARTED";
+    const legacy = p.tasks.length === 0 ? p.status : p.tasks.every(t => t.status === "COMPLETE") ? "COMPLETE" : p.tasks.some(t => t.status === "BLOCKED") ? "BLOCKED" : p.tasks.some(t => t.status === "IN_PROGRESS") ? "IN_PROGRESS" : "NOT_STARTED";
+    return phaseWithPackageEvidence(legacy, p.workPackages);
   }
 
   const totalPhases = job.phases.length;

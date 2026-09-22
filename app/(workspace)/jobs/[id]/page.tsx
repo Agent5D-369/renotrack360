@@ -13,6 +13,7 @@ import { options, relationOptions } from "@/lib/form-options";
 import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { buildSmsLink } from "@/lib/sms";
 import { prisma } from "@/lib/prisma";
+import { packageInclude, phaseWithPackageEvidence } from "@/lib/work-package";
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireStaffPage();
@@ -20,7 +21,7 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
   const job = await prisma.job.findUniqueOrThrow({
     where: { id },
     include: {
-      phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: { include: { assignedToProfile: true }, orderBy: { dueDate: "asc" } } } },
+      phases: { orderBy: { phaseNumber: "asc" }, include: { workPackages: { include: packageInclude }, tasks: { include: { assignedToProfile: true }, orderBy: { dueDate: "asc" } } } },
       tasks: { include: { phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" } },
       invoices: { orderBy: { dueDate: "desc" }, include: { payments: { where: { status: "COMPLETED" }, select: { amount: true } } } },
       changeOrders: { orderBy: { createdAt: "desc" } },
@@ -45,13 +46,14 @@ export default async function JobDetailPage({ params }: { params: Promise<{ id: 
             ? "IN_PROGRESS"
             : "NOT_STARTED"
       : phase.status;
-    return { ...phase, computedStatus };
+    return { ...phase, computedStatus: phaseWithPackageEvidence(computedStatus, phase.workPackages) };
   });
   const computedActivePhase = phaseSnapshots.find((phase) => phase.computedStatus !== "COMPLETE") ?? phaseSnapshots.at(-1);
   const receiptTotal = job.invoices.reduce((sum, invoice) => invoice.payments.reduce((value, payment) => value.plus(payment.amount), sum), job.amountPaid.minus(job.amountPaid));
   return (
     <>
       <PageHeader title={job.jobName} body="Job execution, order-of-operations phases, financials, reports, change orders, and closeout discipline." actionHref={`/jobs/${job.id}/edit`} actionLabel="Edit job" />
+      <Link href={`/jobs/${job.id}/work-packages`} className="mb-4 mr-5 inline-block text-sm font-semibold text-primary underline">Accepted scope and ordered work</Link>
       <Link href={`/jobs/${job.id}/financial-review`} className="mb-4 inline-block text-sm font-semibold text-primary underline">Review contract and receipt evidence</Link>
       {!receiptTotal.eq(job.amountPaid) && <Panel className="mb-4 border-amber-300 bg-amber-50 p-4"><p className="text-sm font-semibold">Payment reconciliation required</p><p className="mt-1 text-sm">The retained job paid amount differs from its linked completed receipts ({money(receiptTotal)}). Review the underlying receipts before relying on the job balance.</p><Link href="/payments/reconciliation" className="mt-2 inline-block text-sm font-semibold text-primary underline">Review recorded amounts and receipts</Link></Panel>}
       <div className="grid gap-3 md:grid-cols-6">
