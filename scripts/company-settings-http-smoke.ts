@@ -16,7 +16,8 @@ async function main() {
       ADD COLUMN IF NOT EXISTS "ownerExceptionMarginPercent" DECIMAL(6,2) NOT NULL DEFAULT 35,
       ADD COLUMN IF NOT EXISTS "changeOrderApprovalThresholdCents" INTEGER,
       ADD COLUMN IF NOT EXISTS "invoiceApprovalThresholdCents" INTEGER,
-      ADD COLUMN IF NOT EXISTS "notificationCadence" TEXT NOT NULL DEFAULT 'WEEKLY'`);
+      ADD COLUMN IF NOT EXISTS "notificationCadence" TEXT NOT NULL DEFAULT 'WEEKLY',
+      ADD COLUMN IF NOT EXISTS "defaultPaymentSchedule" JSONB`);
 
     const owner = await db.user.findUniqueOrThrow({ where: { id: "report-wave-local-owner" } });
     const organizationId = owner.organizationId!;
@@ -79,6 +80,35 @@ async function main() {
     assert.ok(scenarioHtml.includes('value="47.5"'), "scenario form renders the company default margin");
     assert.ok(scenarioHtml.includes("Owner exception below 30% margin"), "scenario copy uses the company exception threshold");
 
+    // Company default payment schedule: save it through the real action, then prove it round-trips
+    // and that a blank submission clears the override back to the built-in default.
+    const scheduleActionId = Object.entries(manifest.node).find(([, value]) => value.exportedName === "updateDefaultPaymentSchedule")?.[0];
+    assert.ok(scheduleActionId, "updateDefaultPaymentSchedule action id");
+    const postSchedule = async (value: string) => {
+      const body = new FormData();
+      body.set(`$ACTION_ID_${scheduleActionId}`, "");
+      body.set("defaultPaymentSchedule", value);
+      const response = await http("/settings", { method: "POST", headers: { origin }, body });
+      await response.text();
+      return response.status;
+    };
+    const threeDraw = [
+      "30 | Mobilization | Contract signed and reviewed by the owner | Deposit under the accepted proposal.",
+      "40 | Rough-in | Rough-in inspection recorded as passed | Progress billing at rough-in.",
+      "30 | Closeout | Final walkthrough and punch recorded | Final billing at closeout.",
+    ].join("\n");
+    assert.equal(await postSchedule(threeDraw), 303, "the payment schedule action redirects on success");
+    const storedSchedule = (await db.organization.findUniqueOrThrow({ where: { id: organizationId } })).defaultPaymentSchedule as Array<{ percent: string; label: string }>;
+    assert.deepEqual(storedSchedule.map(m => m.percent), ["30", "40", "30"], "the company schedule is stored");
+    const rerendered = await (await http("/settings")).text();
+    assert.ok(rerendered.includes("30 | Mobilization"), "the settings editor re-renders the stored schedule for editing");
+    assert.equal(await postSchedule("20 | Deposit"), 303, "an unusable schedule is refused with a redirect rather than a crash");
+    assert.deepEqual((await db.organization.findUniqueOrThrow({ where: { id: organizationId } })).defaultPaymentSchedule, storedSchedule, "a refused schedule does not overwrite the stored one");
+    assert.equal(await postSchedule(""), 303, "a blank schedule clears the override");
+    assert.equal((await db.organization.findUniqueOrThrow({ where: { id: organizationId } })).defaultPaymentSchedule ?? null, null, "clearing writes SQL null so the built-in default applies again");
+    const clearedHtml = await (await http("/settings")).text();
+    assert.ok(!clearedHtml.includes("30 | Mobilization"), "the editor shows the built-in default after clearing");
+
     writeFileSync(".preservation/company-settings-local-http.json", JSON.stringify({
       checkedAt: new Date().toISOString(),
       settingsPage: 200,
@@ -92,6 +122,9 @@ async function main() {
       },
       invalidSubmissionRefused: true,
       scenarioDefaultMargin: Number(after.defaultTargetMarginPercent),
+      paymentScheduleStored: ["30", "40", "30"],
+      paymentScheduleRefusedWithoutWrite: true,
+      paymentScheduleClearedToNull: true,
       marginBefore: previousMargin,
       productionMutations: false,
     }, null, 2));

@@ -500,6 +500,7 @@ model Organization {
   changeOrderApprovalThresholdCents Int?
   invoiceApprovalThresholdCents Int?
   notificationCadence String @default("WEEKLY")
+  defaultPaymentSchedule Json?
   paymentTerms       String   @default("Payment is due by the invoice due date. Work changes require written approval.")
   estimateTerms      String   @default("Estimate is valid until the expiration date and subject to approved scope, site conditions, selections, and trade pricing.")
   invoiceTerms       String   @default("Invoices are payable by the listed due date. Card or ACH processing may be handled by Stripe when configured.")

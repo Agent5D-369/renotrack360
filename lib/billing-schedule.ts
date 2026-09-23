@@ -54,3 +54,37 @@ export function calculateBillingMilestones(total: string, rawSchedule: unknown) 
     return { ...milestone, amount: formatCents(cents) };
   });
 }
+
+/**
+ * Company-editable default schedule: one draw per line,
+ * "percent | label | trigger event | client description".
+ * Keys are derived from the label so nothing has to be invented by hand.
+ */
+export function parseDefaultScheduleText(text: string): BillingMilestone[] {
+  const lines = String(text ?? "").split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const rows = lines.map((line, index) => {
+    const parts = line.split("|").map(part => part.trim());
+    if (parts.length !== 4) throw new Error(`Line ${index + 1} needs four parts separated by "|": percent | label | trigger event | client description.`);
+    const [percent, label, triggerEvent, clientDescription] = parts;
+    return { key: scheduleKey(label, index), percent, label, triggerEvent, clientDescription };
+  });
+  return billingScheduleInputSchema.parse(rows);
+}
+
+function scheduleKey(label: string, index: number) {
+  const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
+  return `${slug || "draw"}-${index + 1}`;
+}
+
+/** Render a schedule back into the editable text form. */
+export function defaultScheduleText(schedule: readonly BillingMilestone[] = defaultBillingMilestones): string {
+  return schedule.map(milestone => [milestone.percent, milestone.label, milestone.triggerEvent, milestone.clientDescription].join(" | ")).join("\n");
+}
+
+/** The stored company schedule, or the built-in four-draw default when it is absent or unusable. */
+export function companyBillingSchedule(stored: unknown): BillingMilestone[] {
+  const fallback = () => defaultBillingMilestones.map(milestone => ({ ...milestone }));
+  if (stored === null || stored === undefined) return fallback();
+  const parsed = billingScheduleInputSchema.safeParse(stored);
+  return parsed.success ? parsed.data : fallback();
+}

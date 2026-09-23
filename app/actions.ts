@@ -1185,6 +1185,25 @@ export async function updateCompanySettings(formData: FormData) {
   redirect("/settings?flash=Company+operations+saved");
 }
 
+/** Company default payment schedule. Blank input clears it back to the built-in four-draw default. */
+export async function updateDefaultPaymentSchedule(formData: FormData) {
+  const actor = await requireStaff();
+  const { parseDefaultScheduleText } = await import("@/lib/billing-schedule");
+  // Prisma distinguishes SQL NULL from JSON null for a nullable Json column, so clearing the
+  // override back to the built-in default has to say DbNull explicitly.
+  const { Prisma } = await import("@prisma/client");
+  const text = String(formData.get("defaultPaymentSchedule") ?? "").trim();
+  let schedule: ReturnType<typeof parseDefaultScheduleText> | null = null;
+  if (text) {
+    try { schedule = parseDefaultScheduleText(text); }
+    catch (error) { redirect(`/settings?error=${encodeURIComponent(error instanceof Error ? error.message : "Check the default payment schedule.")}`); }
+  }
+  await prisma.organization.update({ where: { id: actor.organizationId }, data: { defaultPaymentSchedule: schedule ?? Prisma.DbNull } });
+  revalidatePath("/settings");
+  revalidatePath("/estimates");
+  redirect("/settings?flash=Default+payment+schedule+saved");
+}
+
 export async function createPaymentLink(invoiceId: string) {
   await requireStaff();
   const invoice = await prisma.invoice.findUniqueOrThrow({ where: { id: invoiceId }, include: { clientProfile: true } });

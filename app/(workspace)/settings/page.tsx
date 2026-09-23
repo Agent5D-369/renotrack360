@@ -1,5 +1,5 @@
 import { requireStaffPage } from "@/lib/staff-access";
-﻿import { updateSettings, updateSettingsTerms, updateCompanySettings, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection, checkAiProviderConnection } from "@/app/actions";
+﻿import { updateSettings, updateSettingsTerms, updateCompanySettings, updateDefaultPaymentSchedule, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection, checkAiProviderConnection } from "@/app/actions";
 import { AiTestButton } from "@/components/ai-test-button";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { dateShort } from "@/lib/format";
 import { TeamSection } from "@/components/team-section";
 import { LogoUpload } from "@/components/logo-upload";
+import { companyBillingSchedule, defaultScheduleText } from "@/lib/billing-schedule";
 
 const PROVIDERS = [
   { value: "ANTHROPIC", label: "Anthropic (Claude)", placeholder: "sk-ant-..." },
@@ -356,6 +357,16 @@ export default async function SettingsPage() {
             Recorded policy, not yet enforced by automation: the change-order and invoice approval thresholds
             and the notification cadence are stored for planning and reporting only.
           </p>
+          <form action={updateDefaultPaymentSchedule} className="mt-5 grid gap-3 border-t border-border pt-5">
+            <label className="grid gap-1 text-sm font-semibold">Default payment schedule
+              <span className="text-xs font-normal text-muted-foreground">
+                One draw per line: percent | label | trigger event | client description. Percentages must total 100.
+                This pre-fills the schedule on every new reviewed proposal. Leave blank to use the built-in four-draw default.
+              </span>
+              <textarea name="defaultPaymentSchedule" rows={6} className="rounded-md border border-border p-3 text-xs" defaultValue={org.defaultPaymentSchedule ? defaultScheduleText(companyBillingSchedule(org.defaultPaymentSchedule)) : ""} />
+            </label>
+            <div><button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">Save payment schedule</button></div>
+          </form>
         </Panel>
       </div>
 
