@@ -4,6 +4,8 @@ import { jobInOrganization } from "@/lib/company-scope";
 import { jobPhotoInOrganization } from "@/lib/delivery-scope";
 ﻿import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
+import type { PdfImageReport } from "@/lib/pdf";
+import { createDocumentImageResolver } from "@/lib/pdf-images";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -37,6 +39,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       ...(after.length ? [{ heading: "After - Completed Work", images: cap(after) }] : []),
     ];
 
+    const imageReport: PdfImageReport = { requested: 0, embedded: 0, skipped: [] };
     const pdf = await buildDocument({
       title: "Project Photo Gallery",
       number: job.jobName,
@@ -49,6 +52,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
         },
       ],
       imageGroups,
+      resolveImage: createDocumentImageResolver(actor),
+      imageReport,
       terms: `Photos captured throughout ${job.jobName}. All work completed by ${org.name}.`,
       brand: {
         companyName: org.name,
@@ -67,6 +72,8 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `attachment; filename="gallery-${slug}.pdf"`,
+        "X-Photos-Requested": String(imageReport.requested),
+        "X-Photos-Embedded": String(imageReport.embedded),
       },
     });
   } catch (err) {

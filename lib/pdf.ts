@@ -33,6 +33,12 @@ export type PdfImageGroup = {
   images: Array<{ url: string; caption?: string | null }>;
 };
 
+/** Callers may supply an authorized resolver; the default only handles absolute external URLs. */
+export type PdfImageResolver = (url: string) => Promise<Buffer | null>;
+
+/** How many requested images actually reached the document, and which ones did not. */
+export type PdfImageReport = { requested: number; embedded: number; skipped: string[] };
+
 async function fetchImageBuffer(url: string): Promise<Buffer | null> {
   try {
     const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -51,6 +57,8 @@ export async function buildDocument(input: {
   property?: string | null;
   sections: Array<{ heading: string; body?: string | null; lines?: PdfLine[] }>;
   imageGroups?: PdfImageGroup[];
+  resolveImage?: PdfImageResolver;
+  imageReport?: PdfImageReport;
   totals?: Array<{ label: string; value: number }>;
   terms?: string | null;
   brand?: PdfBrand;
@@ -59,6 +67,7 @@ export async function buildDocument(input: {
   const chunks: Buffer[] = [];
   doc.on("data", (chunk: Buffer) => chunks.push(chunk));
   const done = new Promise<Buffer>((resolve) => doc.on("end", () => resolve(Buffer.concat(chunks))));
+  const loadImage = input.resolveImage ?? fetchImageBuffer;
 
   const brand = input.brand;
   const brandColor = brand?.color ?? "#16231f";
@@ -70,7 +79,7 @@ export async function buildDocument(input: {
   doc.rect(48, 48, doc.page.width - 96, HEADER_H).fill(brandColor);
 
   // Try to render the logo; fall back to text-only header
-  const logoBuffer = brand?.logoUrl ? await fetchImageBuffer(brand.logoUrl) : null;
+  const logoBuffer = brand?.logoUrl ? await loadImage(brand.logoUrl) : null;
   if (logoBuffer) {
     // Logo on left, company info on right
     const logoMaxW = 180;
@@ -154,21 +163,34 @@ export async function buildDocument(input: {
       let rowY = doc.y;
 
       for (const img of group.images) {
-        const buf = await fetchImageBuffer(img.url);
+        if (input.imageReport) input.imageReport.requested += 1;
+        const buf = await loadImage(img.url);
+        let embedded = false;
         if (buf) {
           try {
-            doc.image(buf, rowX + col * (imgW + 16), rowY, { width: imgW, height: imgH, cover: [imgW, imgH] });
+            // `cover` scales the image to cover the cell but does not clip it, and passing
+            // width/height as well made tall photos run past the cell into their caption and the
+            // next row. Clip to the cell so every photo occupies exactly one grid slot.
+            doc.save();
+            doc.rect(rowX + col * (imgW + 16), rowY, imgW, imgH).clip();
+            doc.image(buf, rowX + col * (imgW + 16), rowY, { cover: [imgW, imgH] });
+            doc.restore();
+            embedded = true;
             if (img.caption) {
-              doc.fontSize(7).fillColor("#94a3b8").text(cleanText(img.caption), rowX + col * (imgW + 16), rowY + imgH + 2, { width: imgW });
+              doc.fontSize(7).fillColor("#64748b").text(cleanText(img.caption), rowX + col * (imgW + 16), rowY + imgH + 4, { width: imgW });
             }
           } catch {
             // Skip images that fail to render
           }
         }
+        if (input.imageReport) {
+          if (embedded) input.imageReport.embedded += 1;
+          else input.imageReport.skipped.push(img.url);
+        }
         col++;
         if (col >= 2) {
           col = 0;
-          rowY += imgH + 30;
+          rowY += imgH + 34;
           if (rowY + imgH > doc.page.height - 60) {
             doc.addPage();
             rowY = 48;
@@ -182,6 +204,15 @@ export async function buildDocument(input: {
   // Terms / footer
   if (input.terms) {
     doc.moveDown(1.5).fontSize(9).fillColor("#94a3b8").text(cleanText(input.terms), { lineGap: 3 });
+  }
+
+  // Honest coverage note: never let a missing photo look like a photo that was never taken.
+  const report = input.imageReport;
+  if (report && report.skipped.length) {
+    doc.moveDown(1).fontSize(8).fillColor("#b45309").text(
+      `${report.skipped.length} of ${report.requested} requested photos could not be embedded in this export. The photo record still exists in the project gallery.`,
+      { lineGap: 2 }
+    );
   }
 
   // Footer brand line
