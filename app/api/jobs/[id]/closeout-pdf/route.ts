@@ -1,24 +1,26 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
+import { jobInOrganization, weeklyReportInOrganization } from "@/lib/company-scope";
+import { phaseInOrganization, taskInOrganization, invoiceInOrganization, changeOrderInOrganization, workPackageInOrganization } from "@/lib/delivery-scope";
 ﻿import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
 import { packageStatusSelect, phaseWithPackageEvidence } from "@/lib/work-package";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { money } from "@/lib/format";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  const actor = await requireStaff();
   try {
     const { id } = await params;
-    const job = await prisma.job.findFirstOrThrow({
-      where: { id, organizationId: DEFAULT_ORG_ID },
+    const job = await prisma.job.findFirst({
+      where: jobInOrganization(actor.organizationId, { id }),
       include: {
-        phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: true, workPackages: { select: packageStatusSelect } } },
-        weeklyReports: { orderBy: { weekEnding: "asc" } },
-        changeOrders: { orderBy: { createdAt: "asc" } },
-        invoices: { where: { status: { not: "VOID" } }, orderBy: { dueDate: "asc" } },
+        phases: { where: phaseInOrganization(actor.organizationId, { jobId: id }), orderBy: { phaseNumber: "asc" }, include: { tasks: { where: taskInOrganization(actor.organizationId, { jobId: id }) }, workPackages: { where: workPackageInOrganization(actor.organizationId, { jobId: id }), select: packageStatusSelect } } },
+        weeklyReports: { where: weeklyReportInOrganization(actor.organizationId, { jobId: id }), orderBy: { weekEnding: "asc" } },
+        changeOrders: { where: changeOrderInOrganization(actor.organizationId, { jobId: id }), orderBy: { createdAt: "asc" } },
+        invoices: { where: invoiceInOrganization(actor.organizationId, { jobId: id, status: { not: "VOID" } }), orderBy: { dueDate: "asc" } },
         clientProfile: true,
         property: true,
         organization: true,
@@ -26,6 +28,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ id: string
       },
     });
 
+    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
     const org = job.organization;
     const openChangeOrders = job.changeOrders.filter((co) => ["DRAFT", "SENT"].includes(co.status));
     const totalBalance = job.invoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);

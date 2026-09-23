@@ -1,5 +1,7 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
+import { jobInOrganization } from "@/lib/company-scope";
+import { jobPhotoInOrganization } from "@/lib/delivery-scope";
 ﻿import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
@@ -7,18 +9,20 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  const actor = await requireStaff();
   try {
     const { id } = await params;
-    const job = await prisma.job.findUniqueOrThrow({
-      where: { id },
+    const job = await prisma.job.findFirst({
+      where: jobInOrganization(actor.organizationId, { id }),
       include: {
-        jobPhotos: { orderBy: [{ label: "asc" }, { takenAt: "asc" }] },
+        jobPhotos: { where: jobPhotoInOrganization(actor.organizationId, { jobId: id }), orderBy: [{ label: "asc" }, { takenAt: "asc" }] },
         clientProfile: true,
         property: true,
         organization: true,
       },
     });
 
+    if (!job) return NextResponse.json({ error: "Job not found" }, { status: 404 });
     const org = job.organization;
     const before = job.jobPhotos.filter((p) => p.label === "BEFORE");
     const during = job.jobPhotos.filter((p) => p.label === "DURING");

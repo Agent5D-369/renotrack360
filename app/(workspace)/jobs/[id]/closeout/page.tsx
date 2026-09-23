@@ -6,21 +6,26 @@ import { Panel } from "@/components/ui";
 import { StatusPill } from "@/components/status-pill";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { activityInOrganization, jobInOrganization } from "@/lib/company-scope";
+import { changeOrderInOrganization, invoiceInOrganization, phaseInOrganization, taskInOrganization } from "@/lib/delivery-scope";
+import { weeklyReportInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function CloseoutPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     include: {
-      phases: { orderBy: { phaseNumber: "asc" }, include: { tasks: true } },
-      weeklyReports: { orderBy: { weekEnding: "desc" } },
-      changeOrders: { orderBy: { createdAt: "desc" } },
-      invoices: { orderBy: { dueDate: "desc" } },
+      phases: { where: phaseInOrganization(actor.organizationId), orderBy: { phaseNumber: "asc" }, include: { tasks: { where: taskInOrganization(actor.organizationId) } } },
+      weeklyReports: { where: weeklyReportInOrganization(actor.organizationId), orderBy: { weekEnding: "desc" } },
+      changeOrders: { where: changeOrderInOrganization(actor.organizationId), orderBy: { createdAt: "desc" } },
+      invoices: { where: invoiceInOrganization(actor.organizationId), orderBy: { dueDate: "desc" } },
       clientProfile: true,
       property: true,
     },
   });
+  if (!job) notFound();
 
   const phasesDone = job.phases.filter((p) => {
     if (p.tasks.length === 0) return p.status === "COMPLETE";
@@ -32,7 +37,7 @@ export default async function CloseoutPage({ params }: { params: Promise<{ id: s
   const totalBalance = job.invoices.reduce((sum, inv) => sum + Number(inv.balanceDue), 0);
 
   const hasFollowUps = await prisma.activity.count({
-    where: { relatedJobId: id, activityType: "FOLLOW_UP" },
+    where: activityInOrganization(actor.organizationId, { relatedJobId: id, activityType: "FOLLOW_UP" }),
   });
 
   return (

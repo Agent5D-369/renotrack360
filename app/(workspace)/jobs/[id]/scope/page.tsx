@@ -5,23 +5,29 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { activityInOrganization } from "@/lib/company-scope";
+import { changeOrderInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 export default async function ScopeCreepPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     include: {
       clientProfile: true,
       activities: {
-        where: { isOutOfScope: true },
+        where: activityInOrganization(actor.organizationId, { isOutOfScope: true }),
         orderBy: { createdAt: "desc" },
       },
       changeOrders: {
+        where: changeOrderInOrganization(actor.organizationId),
         orderBy: { createdAt: "desc" },
       },
     },
   });
+  if (!job) notFound();
 
   const pendingRequests = job.activities.filter((a) => !a.completedAt);
   const convertedRequests = job.activities.filter((a) => a.completedAt);

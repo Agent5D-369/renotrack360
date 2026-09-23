@@ -5,6 +5,9 @@ import { ConfirmSubmitButton } from "@/components/confirm-submit-button";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { jobPhotoInOrganization, phaseInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 const LABELS = ["BEFORE", "DURING", "AFTER"] as const;
 const LABEL_COLORS = {
@@ -14,17 +17,18 @@ const LABEL_COLORS = {
 };
 
 export default async function GalleryPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     include: {
-      jobPhotos: { orderBy: [{ label: "asc" }, { takenAt: "asc" }] },
-      phases: { select: { phaseName: true }, orderBy: { phaseNumber: "asc" } },
+      jobPhotos: { where: jobPhotoInOrganization(actor.organizationId), orderBy: [{ label: "asc" }, { takenAt: "asc" }] },
+      phases: { where: phaseInOrganization(actor.organizationId), select: { phaseName: true }, orderBy: { phaseNumber: "asc" } },
       clientProfile: true,
       property: true,
     },
   });
+  if (!job) notFound();
 
   const photosByLabel = {
     BEFORE: job.jobPhotos.filter((p) => p.label === "BEFORE"),

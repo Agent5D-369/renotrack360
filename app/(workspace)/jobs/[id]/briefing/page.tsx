@@ -5,19 +5,23 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { money, dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { changeOrderInOrganization, invoiceInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 export default async function BriefingPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     include: {
       clientProfile: true,
       property: true,
-      invoices: { where: { status: { not: "VOID" } }, orderBy: { dueDate: "asc" } },
-      changeOrders: { where: { status: "APPROVED" } },
+      invoices: { where: invoiceInOrganization(actor.organizationId, { status: { not: "VOID" } }), orderBy: { dueDate: "asc" } },
+      changeOrders: { where: changeOrderInOrganization(actor.organizationId, { status: "APPROVED" }) },
     },
   });
+  if (!job) notFound();
 
   const alreadyDeposit = ["DEPOSIT_RECEIVED", "MATERIALS_PLANNING", "DEMO", "ROUGH_IN", "INSPECTIONS",
     "DRYWALL_SURFACES", "FINISHES", "PUNCH_LIST", "FINAL_WALKTHROUGH", "COMPLETE", "WARRANTY_FOLLOW_UP"].includes(job.jobStatus);

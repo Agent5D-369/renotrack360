@@ -4,15 +4,17 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { fieldReportInOrganization, meetingInOrganization, taskInOrganization, timeEntryInOrganization } from "@/lib/delivery-scope";
 
 export default async function OperationsPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const [tasks, reports, meetings, timeEntries, jobs] = await Promise.all([
-    prisma.task.findMany({ include: { job: true, phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" }, take: 8 }),
-    prisma.fieldReport.findMany({ include: { job: true }, orderBy: { reportDate: "desc" }, take: 6 }),
-    prisma.meeting.findMany({ include: { job: true }, orderBy: { scheduledAt: "asc" }, take: 6 }),
-    prisma.timeEntry.findMany({ include: { job: true, profile: true }, orderBy: { workDate: "desc" }, take: 6 }),
-    prisma.job.findMany({ where: { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }, include: { tasks: true, fieldReports: true }, take: 6 })
+    prisma.task.findMany({ where: taskInOrganization(actor.organizationId), include: { job: true, phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" }, take: 8 }),
+    prisma.fieldReport.findMany({ where: fieldReportInOrganization(actor.organizationId), include: { job: true }, orderBy: { reportDate: "desc" }, take: 6 }),
+    prisma.meeting.findMany({ where: meetingInOrganization(actor.organizationId), include: { job: true }, orderBy: { scheduledAt: "asc" }, take: 6 }),
+    prisma.timeEntry.findMany({ where: timeEntryInOrganization(actor.organizationId), include: { job: true, profile: true }, orderBy: { workDate: "desc" }, take: 6 }),
+    prisma.job.findMany({ where: jobInOrganization(actor.organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }), include: { tasks: { where: taskInOrganization(actor.organizationId) }, fieldReports: { where: fieldReportInOrganization(actor.organizationId) } }, take: 6 })
   ]);
 
   return (

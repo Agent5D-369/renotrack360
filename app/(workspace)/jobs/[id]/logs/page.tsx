@@ -4,14 +4,18 @@ import { PageHeader } from "@/components/page-header";
 import { LinkButton, Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { fieldReportInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 export default async function JobLogsPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [job, reports] = await Promise.all([
-    prisma.job.findUniqueOrThrow({ where: { id }, select: { id: true, jobName: true, propertyId: true, property: { select: { id: true, propertyAddress: true } } } }),
-    prisma.fieldReport.findMany({ where: { jobId: id }, orderBy: { reportDate: "desc" } })
+    prisma.job.findFirst({ where: jobInOrganization(actor.organizationId, { id }), select: { id: true, jobName: true, propertyId: true, property: { select: { id: true, propertyAddress: true } } } }),
+    prisma.fieldReport.findMany({ where: fieldReportInOrganization(actor.organizationId, { jobId: id }), orderBy: { reportDate: "desc" } })
   ]);
+  if (!job) notFound();
 
   return (
     <>

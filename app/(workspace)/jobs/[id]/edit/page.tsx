@@ -4,17 +4,21 @@ import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
 import { options, relationOptions } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization, profileInOrganization, propertyInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { phaseInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 export default async function EditJobPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [job, profiles, properties, quotes, phases] = await Promise.all([
-    prisma.job.findUniqueOrThrow({ where: { id }, include: { financialBaseline: true } }),
-    prisma.profile.findMany({ select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
-    prisma.property.findMany({ select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
-    prisma.quote.findMany({ select: { id: true, quoteName: true }, orderBy: { quoteName: "asc" } }),
-    prisma.renovationPhase.findMany({ where: { jobId: id }, orderBy: { phaseNumber: "asc" }, select: { phaseNumber: true, phaseName: true } })
+    prisma.job.findFirst({ where: jobInOrganization(actor.organizationId, { id }), include: { financialBaseline: true } }),
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true }, orderBy: { profileName: "asc" } }),
+    prisma.property.findMany({ where: propertyInOrganization(actor.organizationId), select: { id: true, propertyAddress: true }, orderBy: { propertyAddress: "asc" } }),
+    prisma.quote.findMany({ where: quoteInOrganization(actor.organizationId), select: { id: true, quoteName: true }, orderBy: { quoteName: "asc" } }),
+    prisma.renovationPhase.findMany({ where: phaseInOrganization(actor.organizationId, { jobId: id }), orderBy: { phaseNumber: "asc" }, select: { phaseNumber: true, phaseName: true } })
   ]);
+  if (!job) notFound();
   const saveJob = updateJob.bind(null, job.id);
 
   return (

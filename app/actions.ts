@@ -616,28 +616,40 @@ export async function deleteChangeOrder(changeOrderId: string) {
 }
 
 export async function createJob(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const returnTo = String(formData.get("returnTo") || "");
   let parsed: ReturnType<typeof jobSchema.parse>;
   try { parsed = jobSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/jobs/new"); }
   if (parsed.jobStatus === "DEPOSIT_RECEIVED") redirect("/jobs/new?error=Create+the+job+then+verify+the+documented+deposit+and+receipts");
   const balanceDue = Number(parsed.contractAmount) - Number(parsed.amountPaid);
-  const job = await prisma.job.create({
-    data: {
-      ...parsed,
-      jobStatus: parsed.jobStatus as Prisma.JobCreateInput["jobStatus"],
-      riskLevel: parsed.riskLevel as Prisma.JobCreateInput["riskLevel"],
-      balanceDue,
-      organizationId: DEFAULT_ORG_ID,
-      phases: {
-        create: renovationPhaseDetails.map(([phaseName, description], index) => ({
-          phaseNumber: index + 1,
-          phaseName,
-          clientUpdate: description,
-          completionCriteria: `Phase ${index + 1} is complete when ${phaseName.toLowerCase()} work is verified, required proof is attached, blockers are resolved, and client-facing status is ready.`
-        }))
-      }
+  const job = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, {
+      profiles: [parsed.clientProfileId], properties: [parsed.propertyId], quotes: [parsed.approvedQuoteId],
+    });
+    if (parsed.approvedQuoteId) {
+      const quote = await tx.quote.findUniqueOrThrow({
+        where: { id: parsed.approvedQuoteId }, select: { clientProfileId: true, propertyId: true },
+      });
+      if ((parsed.clientProfileId && quote.clientProfileId !== parsed.clientProfileId)
+        || (parsed.propertyId && quote.propertyId !== parsed.propertyId)) throw new CompanyRelationError();
     }
+    return tx.job.create({
+      data: {
+        ...parsed,
+        jobStatus: parsed.jobStatus as Prisma.JobCreateInput["jobStatus"],
+        riskLevel: parsed.riskLevel as Prisma.JobCreateInput["riskLevel"],
+        balanceDue,
+        organizationId: actor.organizationId,
+        phases: {
+          create: renovationPhaseDetails.map(([phaseName, description], index) => ({
+            phaseNumber: index + 1,
+            phaseName,
+            clientUpdate: description,
+            completionCriteria: `Phase ${index + 1} is complete when ${phaseName.toLowerCase()} work is verified, required proof is attached, blockers are resolved, and client-facing status is ready.`
+          }))
+        }
+      }
+    });
   });
   revalidatePath("/jobs");
   if (returnTo?.startsWith("/guided/")) redirect(returnTo);
@@ -730,14 +742,25 @@ export async function updateEstimate(estimateId: string, formData: FormData) {
 }
 
 export async function createTask(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const parsed = taskSchema.parse(nullable(data(formData)));
-  await prisma.task.create({
-    data: {
-      ...parsed,
-      status: parsed.status as Prisma.TaskCreateInput["status"],
-      priority: parsed.priority as Prisma.TaskCreateInput["priority"]
+  const { assertDeliveryRelations, DeliveryRelationError } = await import("@/lib/delivery-relations");
+  await prisma.$transaction(async tx => {
+    await assertDeliveryRelations(tx, actor.organizationId, { phases: [parsed.phaseId] });
+    await assertCompanyRelations(tx, actor.organizationId, {
+      jobs: [parsed.jobId], profiles: [parsed.assignedToProfileId],
+    });
+    if (parsed.phaseId) {
+      const phase = await tx.renovationPhase.findUniqueOrThrow({ where: { id: parsed.phaseId }, select: { jobId: true } });
+      if (phase.jobId !== parsed.jobId) throw new DeliveryRelationError();
     }
+    await tx.task.create({
+      data: {
+        ...parsed,
+        status: parsed.status as Prisma.TaskCreateInput["status"],
+        priority: parsed.priority as Prisma.TaskCreateInput["priority"]
+      }
+    });
   });
   revalidatePath("/operations");
   revalidatePath("/field");
@@ -746,10 +769,16 @@ export async function createTask(formData: FormData) {
 }
 
 export async function completeTask(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const taskId = String(formData.get("taskId") ?? "");
-  const returnTo = String(formData.get("returnTo") ?? "/field");
-  await prisma.task.update({ where: { id: taskId }, data: { status: "COMPLETE" } });
+  const requestedReturn = String(formData.get("returnTo") ?? "/field");
+  const returnTo = requestedReturn === "/field" || requestedReturn === "/operations" || /^\/jobs\/[^/?#]+$/.test(requestedReturn)
+    ? requestedReturn : "/field";
+  const { assertDeliveryRelations } = await import("@/lib/delivery-relations");
+  await prisma.$transaction(async tx => {
+    await assertDeliveryRelations(tx, actor.organizationId, { tasks: [taskId] });
+    await tx.task.update({ where: { id: taskId }, data: { status: "COMPLETE" } });
+  });
   revalidatePath("/field");
   revalidatePath("/operations");
   redirect(returnTo + "?flash=Task+marked+complete");
@@ -796,28 +825,25 @@ const projectTaskTemplates = {
 } as const;
 
 export async function deployProjectTaskTemplate(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const templateKey = String(formData.get("templateKey") || "FULL_INTERIOR_RENOVATION") as keyof typeof projectTaskTemplates;
   const template = projectTaskTemplates[templateKey] ?? projectTaskTemplates.FULL_INTERIOR_RENOVATION;
-  const job = await prisma.job.findUniqueOrThrow({ where: { id: jobId }, include: { phases: true } });
-  const phaseByName = new Map(job.phases.map((phase) => [phase.phaseName, phase]));
-
-  for (const [phaseName, taskName, priority] of template.tasks) {
-    const phase = phaseByName.get(phaseName);
-    const exists = await prisma.task.findFirst({ where: { jobId, phaseId: phase?.id, taskName } });
-    if (!exists) {
-      await prisma.task.create({
-        data: {
-          jobId,
-          phaseId: phase?.id,
-          taskName,
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${actor.organizationId + ":delivery-job:" + jobId}, 0))::text`;
+    const job = await tx.job.findUniqueOrThrow({ where: { id: jobId }, include: { phases: true } });
+    const phaseByName = new Map(job.phases.map((phase) => [phase.phaseName, phase]));
+    for (const [phaseName, taskName, priority] of template.tasks) {
+      const phase = phaseByName.get(phaseName);
+      const exists = await tx.task.findFirst({ where: { jobId, phaseId: phase?.id, taskName } });
+      if (!exists) {
+        await tx.task.create({ data: { jobId, phaseId: phase?.id, taskName,
           priority: priority as Prisma.TaskCreateInput["priority"],
-          notes: `Deployed from ${template.label} project template. Adjust scope, assignee, dates, and proof requirements for the actual job.`
-        }
-      });
+          notes: `Deployed from ${template.label} project template. Adjust scope, assignee, dates, and proof requirements for the actual job.` } });
+      }
     }
-  }
+  });
 
   revalidatePath(`/jobs/${jobId}`);
   redirect(`/jobs/${jobId}`);
@@ -1255,12 +1281,12 @@ export async function logActualCost(formData: FormData) {
 }
 
 export async function createFieldReport(formData: FormData) {
-  await requireStaff();
-  const { assertEntityOwnership, MediaError } = await import("@/lib/private-media");
+  const actor = await requireStaff();
+  const { inspectContent, MediaError } = await import("@/lib/private-media");
   const { storeFile } = await import("@/lib/storage");
 
   const jobId = String(formData.get("jobId") || "");
-  await assertEntityOwnership(prisma, "JOB", jobId, DEFAULT_ORG_ID);
+  await prisma.$transaction(tx => assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] }));
   const crewSummary = String(formData.get("crewSummary") || "");
   const workCompleted = String(formData.get("workCompleted") || "");
   const blockers = String(formData.get("blockers") || "") || null;
@@ -1276,16 +1302,24 @@ export async function createFieldReport(formData: FormData) {
 
   // Project photos stay private and durable; public sharing requires a separate publication flow.
   const photoFiles = formData.getAll("photos") as File[];
-  const photoUrls: string[] = [];
-  for (const file of photoFiles) {
-    if (!(file instanceof File) || file.size === 0) continue;
+  const retainedPhotos = photoFiles.filter(file => file instanceof File && file.size > 0);
+  for (const file of retainedPhotos) {
     if (!file.type.startsWith("image/")) throw new MediaError("Field report photos must be JPG, PNG or WebP images.");
+    inspectContent(Buffer.from(await file.arrayBuffer()), file.type);
+  }
+  const photoUrls: string[] = [];
+  // FileAsset and private-volume writes have their own integrity transaction. A later report
+  // write failure can leave an unreferenced private asset for an operator to remove safely.
+  for (const file of retainedPhotos) {
     const asset = await storeFile({ entityType: "JOB", entityId: jobId, file, notes: "Field report photo" });
     photoUrls.push(asset.url);
   }
 
-  const report = await prisma.fieldReport.create({
-    data: { jobId, crewSummary, workCompleted, blockers, materialsUsed, equipmentUsed, weatherNotes, clientVisible, reportDate, photos: photoUrls }
+  const report = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    return tx.fieldReport.create({
+      data: { jobId, crewSummary, workCompleted, blockers, materialsUsed, equipmentUsed, weatherNotes, clientVisible, reportDate, photos: photoUrls }
+    });
   });
 
   revalidatePath(`/jobs/${jobId}/logs`);
@@ -1294,10 +1328,15 @@ export async function createFieldReport(formData: FormData) {
 }
 
 export async function deleteFieldReport(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const reportId = String(formData.get("reportId") || "");
-  const report = await prisma.fieldReport.findUniqueOrThrow({ where: { id: reportId }, select: { jobId: true } });
-  await prisma.fieldReport.delete({ where: { id: reportId } });
+  const { assertDeliveryRelations } = await import("@/lib/delivery-relations");
+  const report = await prisma.$transaction(async tx => {
+    await assertDeliveryRelations(tx, actor.organizationId, { fieldReports: [reportId] });
+    const owned = await tx.fieldReport.findUniqueOrThrow({ where: { id: reportId }, select: { jobId: true } });
+    await tx.fieldReport.delete({ where: { id: reportId } });
+    return owned;
+  });
   revalidatePath(`/jobs/${report.jobId}/logs`);
   revalidatePath(`/jobs/${report.jobId}`);
   redirect(`/jobs/${report.jobId}/logs`);
@@ -1342,36 +1381,41 @@ export async function deleteProfileRelationship(formData: FormData) {
 // ─── Phase 1 lifecycle actions ────────────────────────────────────────────────
 
 export async function reseedJobPhases(jobId: string) {
-  await requireStaff();
-  if (await prisma.workPackage.count({ where: { scopeItem: { jobId } } })) redirect(`/jobs/${jobId}?error=Retained+work+packages+prevent+phase+reset`);
-  await prisma.renovationPhase.deleteMany({ where: { jobId } });
-  await prisma.renovationPhase.createMany({
-    data: renovationPhaseDetails.map(([phaseName, description], index) => ({
-      jobId,
-      phaseNumber: index + 1,
-      phaseName,
-      clientUpdate: description,
-      completionCriteria: `Phase ${index + 1} is complete when ${phaseName.toLowerCase()} work is verified, required proof is attached, blockers are resolved, and client-facing status is ready.`,
-    })),
+  const actor = await requireStaff();
+  const blocked = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${actor.organizationId + ":delivery-job:" + jobId}, 0))::text`;
+    if (await tx.workPackage.count({ where: { scopeItem: { jobId } } })) return true;
+    await tx.renovationPhase.deleteMany({ where: { jobId } });
+    await tx.renovationPhase.createMany({
+      data: renovationPhaseDetails.map(([phaseName, description], index) => ({
+        jobId,
+        phaseNumber: index + 1,
+        phaseName,
+        clientUpdate: description,
+        completionCriteria: `Phase ${index + 1} is complete when ${phaseName.toLowerCase()} work is verified, required proof is attached, blockers are resolved, and client-facing status is ready.`,
+      })),
+    });
+    return false;
   });
+  if (blocked) redirect(`/jobs/${jobId}?error=Retained+work+packages+prevent+phase+reset`);
   revalidatePath(`/jobs/${jobId}`);
   redirect(`/jobs/${jobId}?flash=Phases+reset+to+canonical+order`);
 }
 
 export async function scheduleFollowUps(jobId: string) {
-  await requireStaff();
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id: jobId },
-    select: { clientProfileId: true, jobName: true },
-  });
+  const actor = await requireStaff();
   const now = new Date();
   const add = (days: number) => new Date(now.getTime() + days * 86_400_000);
-  await prisma.activity.createMany({
-    data: [
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    const job = await tx.job.findUniqueOrThrow({ where: { id: jobId }, select: { clientProfileId: true, jobName: true } });
+    await assertCompanyRelations(tx, actor.organizationId, { profiles: [job.clientProfileId] });
+    await tx.activity.createMany({ data: [
       { relatedJobId: jobId, relatedProfileId: job.clientProfileId, activityType: "FOLLOW_UP", subject: `30-day follow-up - ${job.jobName}`, body: "Check in with client 30 days after closeout. Ask about warranty items, satisfaction, and referrals.", dueDate: add(30) },
       { relatedJobId: jobId, relatedProfileId: job.clientProfileId, activityType: "FOLLOW_UP", subject: `90-day follow-up - ${job.jobName}`, body: "90-day check-in. Confirm everything is holding well. Ask if they know anyone planning a renovation.", dueDate: add(90) },
       { relatedJobId: jobId, relatedProfileId: job.clientProfileId, activityType: "FOLLOW_UP", subject: `Annual check-in - ${job.jobName}`, body: "Annual touch-base. Mention seasonal maintenance, ask about any new projects, and request an updated referral.", dueDate: add(365) },
-    ],
+    ] });
   });
   revalidatePath(`/jobs/${jobId}`);
   redirect(`/jobs/${jobId}/closeout?flash=Follow-ups+scheduled`);
@@ -1810,72 +1854,82 @@ export async function toggleUiMode(formData: FormData) {
 // ─── Phase 5: Before/after proof engine ──────────────────────────────────────
 
 export async function importPhotosFromLogs(jobId: string) {
-  await requireStaff();
-  const [fieldReports, weeklyReports] = await Promise.all([
-    prisma.fieldReport.findMany({ where: { jobId }, select: { id: true, photos: true, reportDate: true } }),
-    prisma.weeklyReport.findMany({ where: { jobId }, select: { id: true, photos: true, weekEnding: true } }),
-  ]);
-
-  const existing = await prisma.jobPhoto.findMany({ where: { jobId }, select: { url: true } });
-  const existingUrls = new Set(existing.map((p) => p.url));
-
-  type JobPhotoRow = { jobId: string; url: string; label: string; sourceType: string; sourceId: string; takenAt: Date };
-  const rows: JobPhotoRow[] = [];
-
-  const changeOrders = await prisma.changeOrder.findMany({ where: { jobId }, select: { id: true, photos: true, createdAt: true } });
-
-  for (const report of fieldReports) {
-    for (const url of report.photos) {
-      if (!existingUrls.has(url)) {
-        rows.push({ jobId, url, label: "DURING", sourceType: "field_report", sourceId: report.id, takenAt: report.reportDate });
-        existingUrls.add(url);
+  const actor = await requireStaff();
+  const rows = await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${actor.organizationId + ":delivery-job:" + jobId}, 0))::text`;
+    const [fieldReports, weeklyReports, changeOrders, existing] = await Promise.all([
+      tx.fieldReport.findMany({ where: { jobId }, select: { id: true, photos: true, reportDate: true } }),
+      tx.weeklyReport.findMany({ where: { jobId }, select: { id: true, photos: true, weekEnding: true } }),
+      tx.changeOrder.findMany({ where: { jobId }, select: { id: true, photos: true, createdAt: true } }),
+      tx.jobPhoto.findMany({ where: { jobId }, select: { url: true } }),
+    ]);
+    const existingUrls = new Set(existing.map((p) => p.url));
+    type JobPhotoRow = { jobId: string; url: string; label: string; sourceType: string; sourceId: string; takenAt: Date };
+    const imported: JobPhotoRow[] = [];
+    for (const report of fieldReports) {
+      for (const url of report.photos) {
+        if (!existingUrls.has(url)) {
+          imported.push({ jobId, url, label: "DURING", sourceType: "field_report", sourceId: report.id, takenAt: report.reportDate });
+          existingUrls.add(url);
+        }
       }
     }
-  }
-  for (const report of weeklyReports) {
-    for (const url of report.photos) {
-      if (!existingUrls.has(url)) {
-        rows.push({ jobId, url, label: "DURING", sourceType: "weekly_report", sourceId: report.id, takenAt: report.weekEnding });
-        existingUrls.add(url);
+    for (const report of weeklyReports) {
+      for (const url of report.photos) {
+        if (!existingUrls.has(url)) {
+          imported.push({ jobId, url, label: "DURING", sourceType: "weekly_report", sourceId: report.id, takenAt: report.weekEnding });
+          existingUrls.add(url);
+        }
       }
     }
-  }
-  for (const co of changeOrders) {
-    for (const url of co.photos) {
-      if (!existingUrls.has(url)) {
-        rows.push({ jobId, url, label: "DURING", sourceType: "change_order", sourceId: co.id, takenAt: co.createdAt });
-        existingUrls.add(url);
+    for (const co of changeOrders) {
+      for (const url of co.photos) {
+        if (!existingUrls.has(url)) {
+          imported.push({ jobId, url, label: "DURING", sourceType: "change_order", sourceId: co.id, takenAt: co.createdAt });
+          existingUrls.add(url);
+        }
       }
     }
-  }
-
-  if (rows.length) await prisma.jobPhoto.createMany({ data: rows });
+    if (imported.length) await tx.jobPhoto.createMany({ data: imported });
+    return imported;
+  });
   revalidatePath(`/jobs/${jobId}/gallery`);
   redirect(`/jobs/${jobId}/gallery?flash=${rows.length}+photos+imported`);
 }
 
 export async function deleteJobPhoto(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const id = String(formData.get("id") || "");
-  const photo = await prisma.jobPhoto.findUniqueOrThrow({ where: { id }, select: { jobId: true } });
-  await prisma.jobPhoto.delete({ where: { id } });
+  const { assertDeliveryRelations } = await import("@/lib/delivery-relations");
+  const photo = await prisma.$transaction(async tx => {
+    await assertDeliveryRelations(tx, actor.organizationId, { jobPhotos: [id] });
+    const owned = await tx.jobPhoto.findUniqueOrThrow({ where: { id }, select: { jobId: true } });
+    await tx.jobPhoto.delete({ where: { id } });
+    return owned;
+  });
   revalidatePath(`/jobs/${photo.jobId}/gallery`);
 }
 
 export async function tagJobPhoto(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const id = String(formData.get("id") || "");
   const label = String(formData.get("label") || "DURING");
   const phase = String(formData.get("phase") || "") || null;
   const roomArea = String(formData.get("roomArea") || "") || null;
   const caption = String(formData.get("caption") || "") || null;
-  const photo = await prisma.jobPhoto.findUniqueOrThrow({ where: { id }, select: { jobId: true } });
-  await prisma.jobPhoto.update({ where: { id }, data: { label, phase, roomArea, caption } });
+  const { assertDeliveryRelations } = await import("@/lib/delivery-relations");
+  const photo = await prisma.$transaction(async tx => {
+    await assertDeliveryRelations(tx, actor.organizationId, { jobPhotos: [id] });
+    const owned = await tx.jobPhoto.findUniqueOrThrow({ where: { id }, select: { jobId: true } });
+    await tx.jobPhoto.update({ where: { id }, data: { label, phase, roomArea, caption } });
+    return owned;
+  });
   revalidatePath(`/jobs/${photo.jobId}/gallery`);
 }
 
 export async function addJobPhoto(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const url = String(formData.get("url") || "").trim();
   const label = String(formData.get("label") || "DURING");
@@ -1883,7 +1937,12 @@ export async function addJobPhoto(formData: FormData) {
   const roomArea = String(formData.get("roomArea") || "") || null;
   const caption = String(formData.get("caption") || "") || null;
   if (!url || !jobId) return;
-  await prisma.jobPhoto.create({ data: { jobId, url, label, phase, roomArea, caption } });
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    const privateAssetId = /^\/api\/files\/([^/?#]+)$/.exec(url)?.[1];
+    await assertOwnedFileAsset(tx, actor.organizationId, privateAssetId);
+    await tx.jobPhoto.create({ data: { jobId, url, label, phase, roomArea, caption } });
+  });
   revalidatePath(`/jobs/${jobId}/gallery`);
 }
 
@@ -1931,15 +1990,17 @@ export async function saveAiProviderConfig(formData: FormData) {
 // ─── Phase 3: client portal + approval actions ───────────────────────────────
 
 export async function generateJobPortalToken(jobId: string) {
-  await requireStaff();
+  const actor = await requireStaff();
   const { randomBytes } = await import("crypto");
-  const existing = await prisma.job.findUnique({ where: { id: jobId }, select: { portalToken: true } });
-  if (existing?.portalToken) {
-    revalidatePath(`/jobs/${jobId}`);
-    return;
-  }
-  const token = randomBytes(32).toString("hex");
-  await prisma.job.update({ where: { id: jobId }, data: { portalToken: token } });
+  await prisma.$transaction(async tx => {
+    await assertCompanyRelations(tx, actor.organizationId, { jobs: [jobId] });
+    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${actor.organizationId + ":delivery-job:" + jobId}, 0))::text`;
+    const existing = await tx.job.findUniqueOrThrow({ where: { id: jobId }, select: { portalToken: true } });
+    if (!existing.portalToken) {
+      const token = randomBytes(32).toString("hex");
+      await tx.job.update({ where: { id: jobId }, data: { portalToken: token } });
+    }
+  });
   revalidatePath(`/jobs/${jobId}`);
 }
 
@@ -1957,21 +2018,16 @@ export async function createChangeOrderApproval(changeOrderId: string, reviewedD
 // ─── Phase 2: scope creep actions ────────────────────────────────────────────
 
 export async function captureOutOfScopeRequest(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   const jobId = String(formData.get("jobId") || "");
   const profileId = String(formData.get("profileId") || "") || null;
   const subject = String(formData.get("subject") || "").trim();
   const body = String(formData.get("body") || "").trim() || null;
   if (!subject) return;
-  await prisma.activity.create({
-    data: {
-      relatedJobId: jobId,
-      relatedProfileId: profileId,
-      activityType: "NOTE",
-      subject,
-      body,
-      isOutOfScope: true,
-    },
+  await prisma.$transaction(async tx => {
+    await assertActivityCompanyRelations(tx, actor.organizationId, { jobId, profileId });
+    await tx.activity.create({ data: { relatedJobId: jobId, relatedProfileId: profileId,
+      activityType: "NOTE", subject, body, isOutOfScope: true } });
   });
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}/scope`);

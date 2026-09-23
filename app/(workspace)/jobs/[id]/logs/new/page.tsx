@@ -5,14 +5,17 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { phaseNameToLibrarySlug } from "@/lib/construction-library";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 export default async function NewFieldReportPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     select: { id: true, jobName: true, activePhase: true }
   });
+  if (!job) notFound();
   const today = new Date().toISOString().slice(0, 10);
   const activePhaseSlug = job.activePhase ? phaseNameToLibrarySlug[job.activePhase] : null;
 

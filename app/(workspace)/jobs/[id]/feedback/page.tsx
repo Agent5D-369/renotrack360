@@ -8,7 +8,9 @@ import { dateShort } from "@/lib/format";
 import { buildSmsLink } from "@/lib/sms";
 import { buildMailtoLink } from "@/lib/email";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { jobInOrganization } from "@/lib/company-scope";
+import { feedbackRequestInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 const REQUEST_TYPES = [
   { value: "GOOGLE_REVIEW", label: "Google review request" },
@@ -19,19 +21,20 @@ const REQUEST_TYPES = [
 ];
 
 export default async function FeedbackPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
   const [job, org] = await Promise.all([
-    prisma.job.findUniqueOrThrow({
-      where: { id },
+    prisma.job.findFirst({
+      where: jobInOrganization(actor.organizationId, { id }),
       include: {
         clientProfile: true,
         property: true,
-        feedbackRequests: { orderBy: { createdAt: "desc" } },
+        feedbackRequests: { where: feedbackRequestInOrganization(actor.organizationId), orderBy: { createdAt: "desc" } },
       },
     }),
-    prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { reviewLink: true, name: true } }),
+    prisma.organization.findUnique({ where: { id: actor.organizationId }, select: { reviewLink: true, name: true } }),
   ]);
+  if (!job) notFound();
 
   const client = job.clientProfile;
 

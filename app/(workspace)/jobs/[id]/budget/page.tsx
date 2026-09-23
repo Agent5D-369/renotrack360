@@ -6,6 +6,8 @@ import { money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { BudgetLineType } from "@prisma/client";
 import { titleFromEnum } from "@/lib/format";
+import { jobInOrganization } from "@/lib/company-scope";
+import { notFound } from "next/navigation";
 
 const LINE_TYPE_COLORS: Record<string, string> = {
   LABOR: "bg-blue-100 text-blue-800",
@@ -19,18 +21,19 @@ const LINE_TYPE_COLORS: Record<string, string> = {
 };
 
 export default async function JobBudgetPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     select: {
       id: true,
       jobName: true,
       contractAmount: true,
-      budgetLines: { orderBy: [{ lineType: "asc" }, { category: "asc" }] },
-      actualCosts: { orderBy: { costDate: "desc" } }
+      budgetLines: { where: { job: jobInOrganization(actor.organizationId) }, orderBy: [{ lineType: "asc" }, { category: "asc" }] },
+      actualCosts: { where: { job: jobInOrganization(actor.organizationId) }, orderBy: { costDate: "desc" } }
     }
   });
+  if (!job) notFound();
 
   const contract = Number(job.contractAmount);
   const totalEstimated = job.budgetLines.reduce((s, l) => s + Number(l.estimatedAmount), 0);

@@ -7,6 +7,8 @@ import { Panel } from "@/components/ui";
 import { dashboardFilters } from "@/lib/constants";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { activityInOrganization, estimateInOrganization, jobInOrganization, leadInOrganization, quoteInOrganization } from "@/lib/company-scope";
+import { changeOrderInOrganization, estimateFollowUpInOrganization, invoiceInOrganization, selectionItemInOrganization } from "@/lib/delivery-scope";
 
 const FOLLOW_UP_LABELS: Record<string, string> = {
   CONFIRM_RECEIVED: "Confirm received",
@@ -17,7 +19,7 @@ const FOLLOW_UP_LABELS: Record<string, string> = {
 };
 
 export default async function TodayPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const session = await getServerSession(authOptions);
   const uiMode = (session?.user as { uiMode?: string } | undefined)?.uiMode ?? "POWER";
   const now = new Date();
@@ -39,33 +41,33 @@ export default async function TodayPage() {
     nextActivities,
     activeJobList
   ] = await Promise.all([
-    prisma.lead.count({ where: { status: "NEW_LEAD", deletedAt: null } }),
-    prisma.lead.count({ where: { probability: { gte: 70 }, deletedAt: null } }),
-    prisma.activity.count({ where: { dueDate: { lte: now }, completedAt: null } }),
-    prisma.estimateFollowUp.count({ where: { dueDate: { lte: now }, completedAt: null, status: { in: ["SCHEDULED", "DUE"] } } }),
-    prisma.estimate.count({ where: { status: "SENT" } }),
-    prisma.job.count({ where: { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } } }),
-    prisma.job.count({ where: { weeklyReportDue: { lte: now }, jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } } }),
-    prisma.changeOrder.count({ where: { status: { in: ["DRAFT", "SENT"] } } }),
-    prisma.changeOrder.aggregate({ _sum: { addedCost: true }, where: { status: { in: ["DRAFT", "SENT"] } } }),
-    prisma.invoice.aggregate({ _sum: { balanceDue: true }, where: { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } } }),
-    prisma.lead.aggregate({ _sum: { estimatedBudget: true }, where: { status: { notIn: ["LOST", "WON"] }, deletedAt: null } }),
-    prisma.quote.aggregate({ _sum: { finalQuoteAmount: true }, where: { quoteStatus: { notIn: ["DECLINED", "CONVERTED_TO_JOB"] } } }),
-    prisma.job.aggregate({ _sum: { contractAmount: true }, where: { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } } }),
+    prisma.lead.count({ where: leadInOrganization(actor.organizationId, { status: "NEW_LEAD", deletedAt: null }) }),
+    prisma.lead.count({ where: leadInOrganization(actor.organizationId, { probability: { gte: 70 }, deletedAt: null }) }),
+    prisma.activity.count({ where: activityInOrganization(actor.organizationId, { dueDate: { lte: now }, completedAt: null }) }),
+    prisma.estimateFollowUp.count({ where: estimateFollowUpInOrganization(actor.organizationId, { dueDate: { lte: now }, completedAt: null, status: { in: ["SCHEDULED", "DUE"] } }) }),
+    prisma.estimate.count({ where: estimateInOrganization(actor.organizationId, { status: "SENT" }) }),
+    prisma.job.count({ where: jobInOrganization(actor.organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }) }),
+    prisma.job.count({ where: jobInOrganization(actor.organizationId, { weeklyReportDue: { lte: now }, jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }) }),
+    prisma.changeOrder.count({ where: changeOrderInOrganization(actor.organizationId, { status: { in: ["DRAFT", "SENT"] } }) }),
+    prisma.changeOrder.aggregate({ _sum: { addedCost: true }, where: changeOrderInOrganization(actor.organizationId, { status: { in: ["DRAFT", "SENT"] } }) }),
+    prisma.invoice.aggregate({ _sum: { balanceDue: true }, where: invoiceInOrganization(actor.organizationId, { status: { in: ["SENT", "PARTIALLY_PAID", "OVERDUE"] } }) }),
+    prisma.lead.aggregate({ _sum: { estimatedBudget: true }, where: leadInOrganization(actor.organizationId, { status: { notIn: ["LOST", "WON"] }, deletedAt: null }) }),
+    prisma.quote.aggregate({ _sum: { finalQuoteAmount: true }, where: quoteInOrganization(actor.organizationId, { quoteStatus: { notIn: ["DECLINED", "CONVERTED_TO_JOB"] } }) }),
+    prisma.job.aggregate({ _sum: { contractAmount: true }, where: jobInOrganization(actor.organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }) }),
     prisma.estimateFollowUp.findMany({
       include: { estimate: { include: { clientProfile: true } } },
-      where: { completedAt: null },
+      where: estimateFollowUpInOrganization(actor.organizationId, { completedAt: null }),
       orderBy: { dueDate: "asc" },
       take: 5
     }),
     prisma.activity.findMany({
-      where: { completedAt: null },
+      where: activityInOrganization(actor.organizationId, { completedAt: null }),
       include: { profile: true, lead: true, property: true, quote: true, job: true },
       orderBy: { dueDate: "asc" },
       take: 5
     }),
     prisma.job.findMany({
-      where: { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } },
+      where: jobInOrganization(actor.organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }),
       orderBy: { weeklyReportDue: "asc" },
       take: 8,
       select: {
@@ -77,10 +79,10 @@ export default async function TodayPage() {
 
   // 3B: overdue selections for dashboard badge
   const overdueSelectionCount = await prisma.selectionItem.count({
-    where: {
+    where: selectionItemInOrganization(actor.organizationId, {
       requiredByDate: { lt: now },
       decisionStatus: { in: ["NOT_STARTED", "OPTIONS_SENT"] },
-    },
+    }),
   });
 
   const isNewAccount = activeJobs === 0 && newLeads === 0 && sentEstimates === 0;

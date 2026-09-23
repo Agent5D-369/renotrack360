@@ -4,11 +4,13 @@ import { DataTable } from "@/components/data-table";
 import { StatusPill } from "@/components/status-pill";
 import { dateShort, money } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
 
 export default async function JobsPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const now = new Date();
   const jobs = await prisma.job.findMany({
+    where: jobInOrganization(actor.organizationId),
     include: { clientProfile: true, property: true },
     orderBy: { updatedAt: "desc" }
   });

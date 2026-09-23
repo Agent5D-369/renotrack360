@@ -6,25 +6,23 @@ import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
+import { jobInOrganization } from "@/lib/company-scope";
+import { outstandingRequiredEvidenceInOrganization, taskInOrganization } from "@/lib/delivery-scope";
 
 export default async function FieldPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const now = new Date();
 
   const [tasks, evidence, activeJobs] = await Promise.all([
     prisma.task.findMany({
       include: { job: true, phase: true, assignedToProfile: true },
-      where: { status: { not: "COMPLETE" } },
+      where: taskInOrganization(actor.organizationId, { status: { not: "COMPLETE" } }),
       orderBy: [{ dueDate: "asc" }, { priority: "desc" }],
       take: 15
     }),
-    prisma.requiredEvidence.findMany({
-      where: { satisfiedAt: null },
-      orderBy: { createdAt: "desc" },
-      take: 8
-    }),
+    outstandingRequiredEvidenceInOrganization(prisma, actor.organizationId, 8),
     prisma.job.findMany({
-      where: { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } },
+      where: jobInOrganization(actor.organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }),
       select: { id: true, jobName: true, weeklyReportDue: true, jobStatus: true },
       orderBy: { updatedAt: "desc" },
       take: 6

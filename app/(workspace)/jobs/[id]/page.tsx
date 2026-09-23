@@ -10,31 +10,34 @@ import { StatusPill } from "@/components/status-pill";
 import { LinkButton, Panel } from "@/components/ui";
 import { dateShort, money } from "@/lib/format";
 import { options, relationOptions } from "@/lib/form-options";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { buildSmsLink } from "@/lib/sms";
 import { prisma } from "@/lib/prisma";
 import { packageInclude, phaseWithPackageEvidence } from "@/lib/work-package";
+import { jobInOrganization, profileInOrganization, weeklyReportInOrganization } from "@/lib/company-scope";
+import { changeOrderInOrganization, fieldReportInOrganization, invoiceInOrganization, paymentInOrganization, phaseInOrganization, selectionItemInOrganization, selectionSheetInOrganization, taskInOrganization, workPackageInOrganization } from "@/lib/delivery-scope";
+import { notFound } from "next/navigation";
 
 export default async function JobDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const job = await prisma.job.findUniqueOrThrow({
-    where: { id },
+  const job = await prisma.job.findFirst({
+    where: jobInOrganization(actor.organizationId, { id }),
     include: {
-      phases: { orderBy: { phaseNumber: "asc" }, include: { workPackages: { include: packageInclude }, tasks: { include: { assignedToProfile: true }, orderBy: { dueDate: "asc" } } } },
-      tasks: { include: { phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" } },
-      invoices: { orderBy: { dueDate: "desc" }, include: { payments: { where: { status: "COMPLETED" }, select: { amount: true } } } },
-      changeOrders: { orderBy: { createdAt: "desc" } },
-      weeklyReports: { orderBy: { weekEnding: "desc" } },
-      selectionSheets: { include: { items: true } },
-      fieldReports: { orderBy: { reportDate: "desc" }, take: 3 },
+      phases: { where: phaseInOrganization(actor.organizationId), orderBy: { phaseNumber: "asc" }, include: { workPackages: { where: workPackageInOrganization(actor.organizationId), include: packageInclude }, tasks: { where: taskInOrganization(actor.organizationId), include: { assignedToProfile: true }, orderBy: { dueDate: "asc" } } } },
+      tasks: { where: taskInOrganization(actor.organizationId), include: { phase: true, assignedToProfile: true }, orderBy: { dueDate: "asc" } },
+      invoices: { where: invoiceInOrganization(actor.organizationId), orderBy: { dueDate: "desc" }, include: { payments: { where: paymentInOrganization(actor.organizationId, { status: "COMPLETED" }), select: { amount: true } } } },
+      changeOrders: { where: changeOrderInOrganization(actor.organizationId), orderBy: { createdAt: "desc" } },
+      weeklyReports: { where: weeklyReportInOrganization(actor.organizationId), orderBy: { weekEnding: "desc" } },
+      selectionSheets: { where: selectionSheetInOrganization(actor.organizationId), include: { items: { where: selectionItemInOrganization(actor.organizationId) } } },
+      fieldReports: { where: fieldReportInOrganization(actor.organizationId), orderBy: { reportDate: "desc" }, take: 3 },
       clientProfile: true,
       property: true
     }
   });
+  if (!job) notFound();
   const [assignees, org] = await Promise.all([
-    prisma.profile.findMany({ select: { id: true, profileName: true, profileType: true }, orderBy: { profileName: "asc" } }),
-    prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { name: true, reviewLink: true } })
+    prisma.profile.findMany({ where: profileInOrganization(actor.organizationId), select: { id: true, profileName: true, profileType: true }, orderBy: { profileName: "asc" } }),
+    prisma.organization.findUnique({ where: { id: actor.organizationId }, select: { name: true, reviewLink: true } })
   ]);
   const phaseSnapshots = job.phases.map((phase) => {
     const computedStatus = phase.tasks.length
