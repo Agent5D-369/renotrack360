@@ -1,19 +1,23 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { changeOrderInOrganization } from "@/lib/delivery-scope";
 import { changeOrderContent, changeContentSchema } from "@/lib/change-order-ledger";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  const actor = await requireStaff();
   const { id } = await params;
-  const order = await prisma.changeOrder.findFirstOrThrow({
-    where: { id, job: { organizationId: DEFAULT_ORG_ID } },
+  // Company isolation: this route was pinned to the hardcoded default organization rather than the
+  // acting staff member's verified company, and an unknown id threw a 500 instead of returning 404.
+  const order = await prisma.changeOrder.findFirst({
+    where: changeOrderInOrganization(actor.organizationId, { id }),
     include: { appliedChange: { include: { snapshot: true } }, clientProfile: true, job: { include: { property: true, organization: true } } }
   });
+  if (!order) return NextResponse.json({ error: "Change order not found" }, { status: 404 });
   const org = order.job.organization;
   const retained = order.appliedChange?.snapshot;
   const content = retained ? changeContentSchema.parse(retained.content) : changeOrderContent(order);
