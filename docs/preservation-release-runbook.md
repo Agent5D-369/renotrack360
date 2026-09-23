@@ -130,7 +130,7 @@ older backups beyond the retention count. It never prints a credential and never
 database. `--dry-run` shows the destination without capturing; `--keep=N` sets retention
 (default 14).
 
-It runs daily at 02:30 through the Windows scheduled task `RenoTrack360-Backup`. Prove it is
+It runs once daily at 03:00 local time through the Windows scheduled task `RenoTrack360-Backup`. Prove it is
 actually running by reading the newest entries in the log, not by trusting the task state:
 
 ```powershell
