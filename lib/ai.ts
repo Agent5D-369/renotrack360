@@ -381,7 +381,29 @@ const COST_RATES: Record<string, [number, number]> = {
   "gpt-4o": [250, 1000],
   "gpt-4o-mini": [15, 60],
   "gpt-4-turbo": [1000, 3000],
+  // DeepSeek published rates in cents per million tokens, taken as the peak cache-miss input and
+  // peak output figures so budgets stay conservative. Off-peak halves both and cache hits are far
+  // cheaper, so real spend should come in under the estimate.
+  // Source: https://api-docs.deepseek.com/quick_start/pricing/ (checked 2026-09-23).
+  "deepseek-flash": [30, 120],
+  "deepseek-v4-pro": [132, 396],
 };
+
+/**
+ * Provider-specific thinking control.
+ *
+ * DeepSeek (verified 2026-09-23 against https://api-docs.deepseek.com/guides/thinking_mode):
+ * thinking is enabled by default at high effort, the OpenAI-format toggle is a top-level
+ * `thinking` object, and effort is `reasoning_effort`. "AUTO" deliberately sends nothing so the
+ * provider default stands rather than us inventing an effort. Other providers get no extra fields,
+ * because an unsupported body field is a hard request error rather than a soft preference.
+ */
+export function thinkingRequestFields(provider: AiProvider, mode: AiThinkingMode | null | undefined): Record<string, unknown> {
+  if (provider !== "DEEPSEEK") return {};
+  if (mode === "OFF") return { thinking: { type: "disabled" } };
+  if (mode === "ON") return { thinking: { type: "enabled" }, reasoning_effort: "high" };
+  return {};
+}
 
 export function resolveAiSecretRef(
   reference: string,
@@ -547,7 +569,12 @@ export async function callLLMWithDependencies(
         "Content-Type": "application/json",
         ...(provider.provider === "OPENROUTER" ? { "HTTP-Referer": "https://renotrack360.com", "X-Title": "RenoTrack360" } : {}),
       },
-      body: JSON.stringify({ model, max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }),
+      body: JSON.stringify({
+        model,
+        max_tokens: maxTokens,
+        messages: [{ role: "user", content: prompt }],
+        ...thinkingRequestFields(provider.provider, binding?.thinkingMode),
+      }),
     }));
     text = data.choices?.[0]?.message?.content ?? "";
     inputTokens = data.usage?.prompt_tokens ?? 0;

@@ -19,6 +19,7 @@ import {
   resolveProviderBaseUrl,
   resolveProviderCredential,
   resolveAiSecretRef,
+  thinkingRequestFields,
   weeklyReportPrompt,
 } from "../lib/ai";
 import {
@@ -437,4 +438,47 @@ test("a stored local endpoint is re-checked against the allowlist at use time", 
   assert.throws(() => resolveProviderBaseUrl(stored, {}), AiRuntimeError, "removing the allowlist disables an already saved connection");
   assert.throws(() => resolveProviderBaseUrl(stored, { AI_LOCAL_ENDPOINT_ALLOWLIST: "10.0.0.5" }), AiRuntimeError);
   assert.equal(resolveProviderBaseUrl({ provider: AiProvider.DEEPSEEK, baseUrl: "https://api.deepseek.com/v1", endpointKind: "HOSTED" }, {}), "https://api.deepseek.com/v1");
+});
+
+test("deepseek thinking control matches the documented OpenAI-format toggle", () => {
+  assert.deepEqual(thinkingRequestFields(AiProvider.DEEPSEEK, "OFF"), { thinking: { type: "disabled" } });
+  assert.deepEqual(thinkingRequestFields(AiProvider.DEEPSEEK, "ON"), { thinking: { type: "enabled" }, reasoning_effort: "high" });
+  assert.deepEqual(thinkingRequestFields(AiProvider.DEEPSEEK, "AUTO"), {}, "automatic keeps the provider default instead of inventing an effort");
+  assert.deepEqual(thinkingRequestFields(AiProvider.DEEPSEEK, null), {});
+  assert.deepEqual(thinkingRequestFields(AiProvider.OPENAI, "ON"), {}, "an unsupported body field would be a hard provider error");
+  assert.deepEqual(thinkingRequestFields(AiProvider.OPENAI_COMPATIBLE, "ON"), {});
+});
+
+test("a bound thinking mode reaches the outbound body only for the provider that supports it", async () => {
+  let sent: Record<string, unknown> = {};
+  const deps = dependencies({
+    getProvider: async () => provider({ provider: AiProvider.DEEPSEEK, apiKeySecretRef: "synthetic-legacy-value", defaultModel: null }),
+    resolveBinding: async () => ({
+      agentId: "agent-1", workflowKey: "weekly-report", thinkingMode: "ON",
+      providerConfig: provider({ provider: AiProvider.DEEPSEEK, apiKeySecretRef: "synthetic-legacy-value", defaultModel: null }),
+      model: "deepseek-flash",
+    }),
+    fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      sent = JSON.parse(String(init?.body));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Bounded draft" } }], usage: { prompt_tokens: 4, completion_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch,
+  });
+  const result = await callLLMWithDependencies("Draft", "weekly-report", 32, {}, deps);
+  assert.deepEqual(sent.thinking, { type: "enabled" });
+  assert.equal(sent.reasoning_effort, "high");
+  assert.equal(result.thinkingMode, "ON");
+});
+
+test("deepseek usage is priced from the published peak rates", async () => {
+  let usage: Parameters<AiRuntimeDependencies["recordUsage"]>[0] | undefined;
+  const deps = dependencies({
+    getProvider: async () => provider({ provider: AiProvider.DEEPSEEK, apiKeySecretRef: "synthetic-legacy-value", defaultModel: "deepseek-flash" }),
+    recordUsage: async value => { usage = value; },
+    fetch: (async () => new Response(JSON.stringify({
+      choices: [{ message: { content: "Bounded draft" } }],
+      usage: { prompt_tokens: 1_000_000, completion_tokens: 1_000_000 },
+    }), { status: 200, headers: { "content-type": "application/json" } })) as typeof fetch,
+  });
+  await callLLMWithDependencies("Draft", "weekly-report", 32, {}, deps);
+  assert.equal(usage?.estimatedCostCents, 150, "one million input and output tokens cost the published peak rate in cents");
 });
