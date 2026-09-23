@@ -16,6 +16,14 @@ import {
 export const COMPANY_EXPORT_VERSION = 1;
 
 /**
+ * Rows read per resource. A company export is built on the request path, so the query asks for one
+ * row more than the limit and the surplus is what proves a resource was cut off. Truncation is
+ * reported in the manifest rather than hidden, because a silently partial export is worse than a
+ * slow one.
+ */
+export const EXPORT_ROW_LIMIT = 20_000;
+
+/**
  * Render one resource as CSV. Nested objects and arrays are kept as JSON text inside their cell
  * rather than flattened, so nothing is silently dropped and the file stays readable in a
  * spreadsheet. Values are quoted per RFC 4180.
@@ -79,42 +87,43 @@ export async function buildCompanyExport(db: PrismaClient, organizationId: strin
         country: true, themePreference: true, planTier: true, subscriptionStatus: true, createdAt: true,
       },
     }),
-    db.user.findMany({ where, select: { id: true, name: true, email: true, role: true, uiMode: true, createdAt: true, updatedAt: true } }),
-    db.membership.findMany({ where, select: { id: true, userId: true, role: true, status: true, invitedEmail: true, invitedAt: true, acceptedAt: true, createdAt: true } }),
-    db.profile.findMany({ where: profileInOrganization(organizationId) }),
-    db.property.findMany({ where: propertyInOrganization(organizationId) }),
-    db.lead.findMany({ where: leadInOrganization(organizationId) }),
-    db.quote.findMany({ where: quoteInOrganization(organizationId), include: { lineItems: true } }),
-    db.estimate.findMany({ where: estimateInOrganization(organizationId) }),
-    db.job.findMany({ where: jobInOrganization(organizationId) }),
-    db.renovationPhase.findMany({ where: phaseInOrganization(organizationId) }),
-    db.task.findMany({ where: taskInOrganization(organizationId) }),
-    db.fieldReport.findMany({ where: fieldReportInOrganization(organizationId) }),
-    db.jobPhoto.findMany({ where: jobPhotoInOrganization(organizationId) }),
-    db.invoice.findMany({ where: invoiceInOrganization(organizationId) }),
-    db.payment.findMany({ where: paymentInOrganization(organizationId) }),
-    db.changeOrder.findMany({ where: changeOrderInOrganization(organizationId) }),
-    db.selectionSheet.findMany({ where: selectionSheetInOrganization(organizationId) }),
-    db.selectionItem.findMany({ where: selectionItemInOrganization(organizationId) }),
-    db.workPackage.findMany({ where: workPackageInOrganization(organizationId) }),
-    db.weeklyReport.findMany({ where: weeklyReportInOrganization(organizationId) }),
-    db.costCatalogItem.findMany({ where }),
-    db.priceSnapshot.findMany({ where }),
-    db.laborRate.findMany({ where }),
-    db.marketCostFactor.findMany({ where }),
-    db.materialItem.findMany({ where }),
-    db.materialAllowance.findMany({ where }),
-    db.vendorQuote.findMany({ where }),
-    db.actualCost.findMany({ where }),
-    db.projectTemplate.findMany({ where }),
-    db.teamCircle.findMany({ where }),
-    db.dropdownOption.findMany({ where }),
-    db.agreementTemplate.findMany({ where }),
-    db.agreement.findMany({ where }),
-    db.serviceTemplate.findMany({ where }),
-    db.checklistTemplate.findMany({ where }),
-    db.aiAgent.findMany({ where }),
+    db.user.findMany({ take: EXPORT_ROW_LIMIT + 1, where, select: { id: true, name: true, email: true, role: true, uiMode: true, createdAt: true, updatedAt: true } }),
+    db.membership.findMany({ take: EXPORT_ROW_LIMIT + 1, where, select: { id: true, userId: true, role: true, status: true, invitedEmail: true, invitedAt: true, acceptedAt: true, createdAt: true } }),
+    db.profile.findMany({ take: EXPORT_ROW_LIMIT + 1, where: profileInOrganization(organizationId) }),
+    db.property.findMany({ take: EXPORT_ROW_LIMIT + 1, where: propertyInOrganization(organizationId) }),
+    db.lead.findMany({ take: EXPORT_ROW_LIMIT + 1, where: leadInOrganization(organizationId) }),
+    db.quote.findMany({ take: EXPORT_ROW_LIMIT + 1, where: quoteInOrganization(organizationId), include: { lineItems: true } }),
+    db.estimate.findMany({ take: EXPORT_ROW_LIMIT + 1, where: estimateInOrganization(organizationId) }),
+    db.job.findMany({ take: EXPORT_ROW_LIMIT + 1, where: jobInOrganization(organizationId) }),
+    db.renovationPhase.findMany({ take: EXPORT_ROW_LIMIT + 1, where: phaseInOrganization(organizationId) }),
+    db.task.findMany({ take: EXPORT_ROW_LIMIT + 1, where: taskInOrganization(organizationId) }),
+    db.fieldReport.findMany({ take: EXPORT_ROW_LIMIT + 1, where: fieldReportInOrganization(organizationId) }),
+    db.jobPhoto.findMany({ take: EXPORT_ROW_LIMIT + 1, where: jobPhotoInOrganization(organizationId) }),
+    db.invoice.findMany({ take: EXPORT_ROW_LIMIT + 1, where: invoiceInOrganization(organizationId) }),
+    db.payment.findMany({ take: EXPORT_ROW_LIMIT + 1, where: paymentInOrganization(organizationId) }),
+    db.changeOrder.findMany({ take: EXPORT_ROW_LIMIT + 1, where: changeOrderInOrganization(organizationId) }),
+    db.selectionSheet.findMany({ take: EXPORT_ROW_LIMIT + 1, where: selectionSheetInOrganization(organizationId) }),
+    db.selectionItem.findMany({ take: EXPORT_ROW_LIMIT + 1, where: selectionItemInOrganization(organizationId) }),
+    db.workPackage.findMany({ take: EXPORT_ROW_LIMIT + 1, where: workPackageInOrganization(organizationId) }),
+    db.weeklyReport.findMany({ take: EXPORT_ROW_LIMIT + 1, where: weeklyReportInOrganization(organizationId) }),
+    db.costCatalogItem.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.priceSnapshot.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.laborRate.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.marketCostFactor.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.materialItem.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.materialAllowance.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.vendorQuote.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.actualCost.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.projectTemplate.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.teamCircle.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.dropdownOption.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.agreementTemplate.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.agreement.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.serviceTemplate.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.checklistTemplate.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
+    db.aiAgent.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
     db.aiProviderConfig.findMany({
+      take: EXPORT_ROW_LIMIT + 1,
       where,
       select: {
         id: true, provider: true, displayName: true, enabled: true, defaultModel: true,
@@ -122,23 +131,41 @@ export async function buildCompanyExport(db: PrismaClient, organizationId: strin
         dataRetentionMode: true, lastCheckedAt: true, lastCheckStatus: true, notes: true, createdAt: true,
       },
     }),
-    db.aiUsageLog.findMany({ where }),
+    db.aiUsageLog.findMany({ take: EXPORT_ROW_LIMIT + 1, where }),
     db.fileAsset.findMany({
+      take: EXPORT_ROW_LIMIT + 1,
       where,
       select: { id: true, entityType: true, entityId: true, fileName: true, mimeType: true, size: true, storageProvider: true, sha256: true, notes: true, createdAt: true },
     }),
-    db.auditEvent.findMany({ where, orderBy: { createdAt: "desc" } }),
+    db.auditEvent.findMany({ take: EXPORT_ROW_LIMIT + 1, where, orderBy: { createdAt: "desc" } }),
   ]);
 
-  const resources = {
-    users, memberships, profiles, properties, leads, quotes, estimates,
-    jobs, phases, tasks, fieldReports, jobPhotos, invoices, payments, changeOrders,
-    selectionSheets, selectionItems, workPackages, weeklyReports,
-    costCatalogItems, priceSnapshots, laborRates, marketCostFactors, materialItems,
-    materialAllowances, vendorQuotes, actualCosts, projectTemplates, teamCircles,
-    dropdownOptions, agreementTemplates, agreements, serviceTemplates, checklistTemplates,
-    aiAgents, aiProviderConfigs, aiUsageLogs, fileAssets, auditEvents,
+  // One row past the limit means the resource was cut off; record which ones so the file is honest
+  // about being partial rather than looking complete.
+  const truncated: {resource: string; returned: number; note: string}[] = [];
+  const capped = <T,>(rows: T[]): T[] => {
+    if (rows.length <= EXPORT_ROW_LIMIT) return rows;
+    return rows.slice(0, EXPORT_ROW_LIMIT);
   };
+  const limited = {
+    users: capped(users), memberships: capped(memberships), profiles: capped(profiles), properties: capped(properties),
+    leads: capped(leads), quotes: capped(quotes), estimates: capped(estimates), jobs: capped(jobs), phases: capped(phases),
+    tasks: capped(tasks), fieldReports: capped(fieldReports), jobPhotos: capped(jobPhotos), invoices: capped(invoices),
+    payments: capped(payments), changeOrders: capped(changeOrders), selectionSheets: capped(selectionSheets),
+    selectionItems: capped(selectionItems), workPackages: capped(workPackages), weeklyReports: capped(weeklyReports),
+    costCatalogItems: capped(costCatalogItems), priceSnapshots: capped(priceSnapshots), laborRates: capped(laborRates),
+    marketCostFactors: capped(marketCostFactors), materialItems: capped(materialItems), materialAllowances: capped(materialAllowances),
+    vendorQuotes: capped(vendorQuotes), actualCosts: capped(actualCosts), projectTemplates: capped(projectTemplates),
+    teamCircles: capped(teamCircles), dropdownOptions: capped(dropdownOptions), agreementTemplates: capped(agreementTemplates),
+    agreements: capped(agreements), serviceTemplates: capped(serviceTemplates), checklistTemplates: capped(checklistTemplates),
+    aiAgents: capped(aiAgents), aiProviderConfigs: capped(aiProviderConfigs), aiUsageLogs: capped(aiUsageLogs),
+    fileAssets: capped(fileAssets), auditEvents: capped(auditEvents),
+  };
+  for (const [resource, rows] of Object.entries({users, memberships, profiles, properties, leads, quotes, estimates, jobs, phases, tasks, fieldReports, jobPhotos, invoices, payments, changeOrders, selectionSheets, selectionItems, workPackages, weeklyReports, costCatalogItems, priceSnapshots, laborRates, marketCostFactors, materialItems, materialAllowances, vendorQuotes, actualCosts, projectTemplates, teamCircles, dropdownOptions, agreementTemplates, agreements, serviceTemplates, checklistTemplates, aiAgents, aiProviderConfigs, aiUsageLogs, fileAssets, auditEvents})) {
+    if (rows.length > EXPORT_ROW_LIMIT) truncated.push({resource, returned: EXPORT_ROW_LIMIT, note: `Limited to ${EXPORT_ROW_LIMIT} rows; more exist in the application.`});
+  }
+
+  const resources = limited;
 
   return {
     manifest: {
@@ -146,6 +173,8 @@ export async function buildCompanyExport(db: PrismaClient, organizationId: strin
       generatedAt: new Date().toISOString(),
       organizationId,
       counts: Object.fromEntries(Object.entries(resources).map(([name, rows]) => [name, rows.length])),
+      rowLimitPerResource: EXPORT_ROW_LIMIT,
+      truncated,
       excluded: [
         "Credential material: provider key references and encrypted key payloads, SMTP passwords, password hashes, invitation tokens.",
         "Private media binaries: photo and document files live outside the database, so only their metadata is included.",
