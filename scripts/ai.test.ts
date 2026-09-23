@@ -382,3 +382,39 @@ test("agent binding entry validates provider choice, model shape and thinking mo
   form.set("model", "bad model with spaces");
   assert.throws(() => parseAgentBindingSettings(form), AiSettingsError);
 });
+
+test("a per-agent binding supplies the connection, the model and the recorded thinking mode", async () => {
+  let authorization = "";
+  let requestedModel = "";
+  const bound = provider({ id: "synthetic-bound", provider: AiProvider.DEEPSEEK, defaultModel: "deepseek-chat", secretCiphertext: null, apiKeySecretRef: "synthetic-bound-value" });
+  const deps = dependencies({
+    getProvider: async () => { throw new Error("the company default must not be read when a binding resolves"); },
+    resolveBinding: async () => ({ agentId: "synthetic-agent", workflowKey: "weekly-report", providerConfig: bound, model: "deepseek-flash", thinkingMode: "ON" }),
+    fetch: (async (_input: RequestInfo | URL, init?: RequestInit) => {
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      requestedModel = JSON.parse(String(init?.body)).model;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "Bound draft" } }],
+        usage: { prompt_tokens: 4, completion_tokens: 2 },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch,
+  });
+  const result = await callLLMWithDependencies("Draft", "weekly-report", 32, {}, deps);
+  assert.equal(result.text, "Bound draft");
+  assert.equal(result.model, "deepseek-flash");
+  assert.equal(result.thinkingMode, "ON");
+  assert.equal(requestedModel, "deepseek-flash");
+  assert.equal(authorization, "Bearer synthetic-bound-value");
+  assert.equal(result.provider, AiProvider.DEEPSEEK);
+});
+
+test("an unusable agent binding fails closed instead of falling back to the company default", async () => {
+  const deps = dependencies({
+    getProvider: async () => { throw new Error("the company default must not be read when a binding is unusable"); },
+    resolveBinding: async () => { throw new AiRuntimeError("CONFIGURATION", "The bound provider connection is disabled."); },
+  });
+  await assert.rejects(
+    () => callLLMWithDependencies("Draft", "weekly-report", 32, {}, deps),
+    (error: unknown) => error instanceof AiRuntimeError && error.code === "CONFIGURATION"
+  );
+});

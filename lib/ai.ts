@@ -10,9 +10,11 @@ export interface LLMResult {
   outputTokens: number;
   model: string;
   provider: string;
+  /** Recorded per-agent preference. Stored and surfaced, not yet transmitted to providers. */
+  thinkingMode?: AiThinkingMode;
 }
 
-interface AiProviderRuntimeConfig {
+export interface AiProviderRuntimeConfig {
   id: string;
   provider: AiProvider;
   defaultModel: string | null;
@@ -43,6 +45,8 @@ export interface AiRuntimeDependencies {
   recordUsage(data: AiUsageWrite): Promise<void>;
   fetch: typeof fetch;
   credentialEnvironment?: AiSecretEnvironment;
+  /** Per-agent binding lookup. Absent when a caller exercises the company default only. */
+  resolveBinding?(organizationId: string, workflowKey: string): Promise<AgentInferenceBinding | null>;
 }
 
 export class AiRuntimeError extends Error {
@@ -258,7 +262,7 @@ export function parseAgentBindingSettings(formData: FormValues) {
 export interface AgentInferenceBinding {
   agentId: string;
   workflowKey: string | null;
-  providerConfig: { id: string; provider: AiProvider; defaultModel: string | null } & Record<string, unknown>;
+  providerConfig: AiProviderRuntimeConfig;
   model: string;
   thinkingMode: AiThinkingMode;
 }
@@ -399,6 +403,7 @@ const productionDependencies: AiRuntimeDependencies = {
     await prisma.aiUsageLog.create({ data });
   },
   fetch: (...args) => fetch(...args),
+  resolveBinding: (organizationId, workflowKey) => resolveAgentInference(organizationId, workflowKey, prisma),
 };
 
 export function isAiBudgetReached(recordedCostCents: number, monthlyBudgetCents: number | null) {
@@ -442,7 +447,10 @@ export async function callLLMWithDependencies(
   }
 
   const organizationId = options.organizationId ?? DEFAULT_ORG_ID;
-  const provider = await dependencies.getProvider(organizationId);
+  // A per-agent binding, when one exists, decides the provider connection and model. An unusable
+  // binding fails closed inside resolveAgentInference rather than silently using another provider.
+  const binding = dependencies.resolveBinding ? await dependencies.resolveBinding(organizationId, workflowArea) : null;
+  const provider = binding?.providerConfig ?? await dependencies.getProvider(organizationId);
   if (!provider) throw new AiRuntimeError("CONFIGURATION", "No AI provider is available.");
   if (options.containsClientData && !provider.allowClientData) {
     throw new AiRuntimeError("CLIENT_DATA_DISABLED", "This provider is not approved for client data.");
@@ -462,7 +470,7 @@ export async function callLLMWithDependencies(
     if (error instanceof AiSecretError) throw new AiRuntimeError("CONFIGURATION", "The stored AI provider credential is unavailable.");
     throw error;
   }
-  const model = provider.defaultModel ?? DEFAULT_MODELS[provider.provider];
+  const model = binding?.model ?? provider.defaultModel ?? DEFAULT_MODELS[provider.provider];
   if (!model) throw new AiRuntimeError("CONFIGURATION", "AI provider configuration is incomplete.");
 
   let text = "";
@@ -529,7 +537,7 @@ export async function callLLMWithDependencies(
     throw new AiRuntimeError("USAGE_LOG", "AI usage could not be recorded.");
   }
 
-  return { text: text.trim(), inputTokens, outputTokens, model, provider: provider.provider };
+  return { text: text.trim(), inputTokens, outputTokens, model, provider: provider.provider, thinkingMode: binding?.thinkingMode };
 }
 
 export function weeklyReportPrompt(data: {
