@@ -10,9 +10,9 @@ import { FLIPSIDE_NAME, FLIPSIDE_LOGO } from "@/lib/flipside-brand";
 const response = (body: unknown, status = 200) => NextResponse.json(body, { status, headers: { "Cache-Control": "private, no-store" } });
 function failure(error: unknown) {
   if (error instanceof ChangeApprovalError) return response({ error: error.message }, error.status);
-  if (error instanceof MediaError) return response({ error: "The proposal document could not be verified. Contact Flipside." }, 409);
-  if (error instanceof FinancialRecordError) return response({ error: "The project needs a financial review before this response can be applied. Contact Flipside." }, 409);
-  return response({ error: "Unable to process this approval. Please contact Flipside." }, 500);
+  if (error instanceof MediaError) return response({ error: "The proposal document could not be verified. Contact your contractor." }, 409);
+  if (error instanceof FinancialRecordError) return response({ error: "The project needs a financial review before this response can be applied. Contact your contractor." }, 409);
+  return response({ error: "Unable to process this approval. Please contact your contractor." }, 500);
 }
 export async function GET(_: Request, { params }: { params: Promise<{ token: string }> }) {
   try {
@@ -20,7 +20,12 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
     if (/^[a-f0-9]{64}$/.test(token) && (await prisma.clientApproval.findUnique({ where: { token }, select: { approvalType: true } }))?.approvalType === "ESTIMATE") {
       const { approval, snapshot, content } = await readEstimateApproval(prisma, token);
       const { quoteId, clientProfileId, propertyId, ...publicContent } = content;
-      return response({ ...publicContent, total: Number(content.total), approvalType: "ESTIMATE", id: approval.id, status: approval.status, alreadyActed: ["APPROVED", "DECLINED"].includes(approval.status), reviewedDigest: snapshot.contentDigest, expiresAt: snapshot.expiresAt.toISOString(), documentUrl: `/api/approve/${token}/document`, orgName: FLIPSIDE_NAME, orgLogoUrl: FLIPSIDE_LOGO, orgBrandColor: "#171717", scheduleNote: "Acceptance records this proposal. Flipside will confirm scheduling after the documented deposit and preconstruction requirements are satisfied." });
+      // Branding belongs to the company that owns this estimate, not to the platform default.
+      const org = await prisma.organization.findUnique({ where: { id: snapshot.organizationId }, select: { name: true, logoUrl: true, brandColor: true, companyTagline: true } });
+      const branding = org
+        ? { orgName: org.name, orgLogoUrl: org.logoUrl, orgBrandColor: org.brandColor, orgTagline: org.companyTagline }
+        : { orgName: FLIPSIDE_NAME, orgLogoUrl: FLIPSIDE_LOGO, orgBrandColor: "#171717", orgTagline: null };
+      return response({ ...publicContent, total: Number(content.total), approvalType: "ESTIMATE", id: approval.id, status: approval.status, alreadyActed: ["APPROVED", "DECLINED"].includes(approval.status), reviewedDigest: snapshot.contentDigest, expiresAt: snapshot.expiresAt.toISOString(), documentUrl: `/api/approve/${token}/document`, ...branding, scheduleNote: `Acceptance records this proposal. ${branding.orgName} will confirm scheduling after the documented deposit and preconstruction requirements are satisfied.` });
     }
     const { approval, snapshot, content } = await readChangeApproval(prisma, token);
     const org = snapshot.job.organization;

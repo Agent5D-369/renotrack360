@@ -25,8 +25,17 @@ export const parseEstimateProposalContent = (value: unknown) => estimateProposal
 export const estimateProposalContentDigest = (value: EstimateProposalContent) => hash(value);
 const estimateInclude = { quote: { include: { lineItems: { orderBy: { id: "asc" } } } }, clientProfile: true, property: true, acceptance: { include: { snapshot: true, conversion: true } } } satisfies Prisma.EstimateInclude;
 type EstimateRecord = Prisma.EstimateGetPayload<{ include: typeof estimateInclude }>;
+/** Actor-scoped lookup. Converting this to the acting company is tracked as company-isolation work. */
 export async function ownedEstimate(db: PrismaClient | Prisma.TransactionClient, id: string) {
-  const estimate = await db.estimate.findFirst({ where: { id, quote: { organizationId: DEFAULT_ORG_ID } }, include: estimateInclude });
+  return ownedEstimateInCompany(db, id, DEFAULT_ORG_ID);
+}
+/**
+ * Company-explicit lookup, used by the public approval token surface: the snapshot records the company
+ * that owns the estimate, so a token never resolves against the default organization.
+ */
+export async function ownedEstimateInCompany(db: PrismaClient | Prisma.TransactionClient, id: string, organizationId: string) {
+  if (!organizationId) throw new FinancialRecordError("Estimate access denied.");
+  const estimate = await db.estimate.findFirst({ where: { id, quote: { organizationId } }, include: estimateInclude });
   if (!estimate) throw new FinancialRecordError("Estimate access denied.");
   return estimate;
 }
@@ -69,9 +78,10 @@ export async function readEstimateApproval(db: PrismaClient | Prisma.Transaction
   if (!/^[a-f0-9]{64}$/.test(token)) throw new ChangeApprovalError("Approval not found.", 404);
   const approval = await db.clientApproval.findUnique({ where: { token }, include: { estimateSnapshot: { include: { sourceFile: true } } } });
   const snapshot = approval?.estimateSnapshot;
-  if (!approval || !snapshot || approval.approvalType !== "ESTIMATE" || approval.estimateId !== snapshot.estimateId || snapshot.organizationId !== DEFAULT_ORG_ID) throw new ChangeApprovalError("This estimate needs a current, reviewed approval link. Contact Flipside.", 409);
-  if (approval.status === "EXPIRED" || snapshot.expiresAt.getTime() <= Date.now()) throw new ChangeApprovalError("This proposal link has expired. Contact Flipside.", 410);
-  const estimate = await ownedEstimate(db, snapshot.estimateId), content = estimateProposalContentSchema.parse(snapshot.content);
+  if (!approval || !snapshot || approval.approvalType !== "ESTIMATE" || approval.estimateId !== snapshot.estimateId) throw new ChangeApprovalError("This estimate needs a current, reviewed approval link. Contact your contractor.", 409);
+  if (approval.status === "EXPIRED" || snapshot.expiresAt.getTime() <= Date.now()) throw new ChangeApprovalError("This proposal link has expired. Contact your contractor.", 410);
+  // The token is the secret; the snapshot records the owning company, and that company must still own the estimate.
+  const estimate = await ownedEstimateInCompany(db, snapshot.estimateId, snapshot.organizationId), content = estimateProposalContentSchema.parse(snapshot.content);
   if (hash(content) !== snapshot.contentDigest || snapshot.sourceFile.sha256 !== snapshot.sourceSha256 || snapshot.sourceFile.entityType !== "QUOTE" || snapshot.sourceFile.entityId !== estimate.quoteId) throw new ChangeApprovalError("The retained proposal could not be verified.", 409);
   if (["SENT", "VIEWED"].includes(approval.status) && estimateReviewDigest(estimate) !== snapshot.sourceDigest) throw new ChangeApprovalError("This estimate changed and needs a refreshed approval link.", 409);
   const issuer = await db.user.findUnique({ where: { id: snapshot.issuedById }, include: { memberships: true } }), membership = issuer?.memberships.find(m => m.organizationId === snapshot.organizationId);

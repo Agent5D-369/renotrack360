@@ -2,17 +2,17 @@ import { requireStaffPage } from "@/lib/staff-access";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 import { directCostFields } from "@/lib/gross-margin";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 
 export default async function PriceScenarioPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const { id } = await params;
-  const snapshot = await prisma.priceSnapshot.findFirst({ where: { id, organizationId: DEFAULT_ORG_ID } });
+  const snapshot = await prisma.priceSnapshot.findFirst({ where: { id, organizationId: actor.organizationId } });
   if (!snapshot) notFound();
   const values = snapshot.inputs as Record<string, string | boolean>;
+  const marketIndex = (snapshot.inputs as { marketIndex?: { applied?: boolean; marketName?: string; zipPrefix?: string | null; laborMultiplier?: string; materialMultiplier?: string; permitMultiplier?: string } }).marketIndex;
   const usd = (value: unknown) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(Number(value));
   return <>
     <PageHeader title={snapshot.name} body="Saved internal pricing scenario. No estimate or contract was changed." />
@@ -36,6 +36,10 @@ export default async function PriceScenarioPage({ params }: { params: Promise<{ 
         {snapshot.costSourceVersionId && <Link href={`/cost-intelligence/catalog/${snapshot.costSourceVersionId}?quantity=${encodeURIComponent(String(values.sourceQuantity))}`} className="mt-2 inline-block text-sm text-primary underline">View retained cost source and quantity</Link>}
         <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">{directCostFields.map(([key, label]) => <div className="contents" key={key}><dt>{label}</dt><dd className="text-right">{usd(values[key])}</dd></div>)}</dl>
         <h3 className="mt-5 font-semibold">Cost and risk basis</h3><p className="mt-2 whitespace-pre-wrap text-sm">{snapshot.basis}</p>
+        <h3 className="mt-5 font-semibold">Geographic market index</h3>
+        {marketIndex?.applied
+          ? <p className="mt-2 text-sm">{marketIndex.marketName}{marketIndex.zipPrefix ? ` (${marketIndex.zipPrefix})` : ""} — labour ×{Number(marketIndex.laborMultiplier)}, material ×{Number(marketIndex.materialMultiplier)}, permit ×{Number(marketIndex.permitMultiplier)}. The labour, material and permit amounts above already include this index.</p>
+          : <p className="mt-2 text-sm text-muted-foreground">No geographic market index was applied to this scenario, so every direct cost is recorded exactly as entered.</p>}
         <p className="mt-3 text-sm">Owner field work: {String(values.ownerFieldHours)} hours × {usd(values.ownerFieldRate)}. Project PM: {String(values.projectManagementHours)} hours × {usd(values.projectManagementRate)}.</p>
         <p className="mt-5 text-xs text-muted-foreground">Saved {snapshot.createdAt.toISOString()}. These assumptions and results are retained as recorded; create a new scenario to revise them.</p>
       </Panel>

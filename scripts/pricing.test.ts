@@ -74,3 +74,27 @@ test("foreign and revoked users cannot save; failed audit leaves no price snapsh
   finally { await db.$executeRawUnsafe('ALTER TABLE "AuditEvent" DROP CONSTRAINT price_test_block'); }
   assert.equal(await db.priceSnapshot.count(), count);
 });
+
+test("a company market index is applied to labour, material and permit costs and retained with the scenario", async () => {
+  const own = await db.marketCostFactor.create({ data: { organizationId: "flipside-org", marketName: "Synthetic Austin index", zipPrefix: "787", laborMultiplier: "1.10", materialMultiplier: "1.20", permitMultiplier: "1.50" } });
+  const foreign = await db.marketCostFactor.create({ data: { organizationId: "foreign-org", marketName: "Synthetic foreign index", zipPrefix: "787", laborMultiplier: "9", materialMultiplier: "9", permitMultiplier: "9" } });
+  const amounts = { materials: "1000", fieldLabor: "1000", permitsDesign: "1000" };
+
+  const plain = await savePriceSnapshot(db, "price-owner", randomUUID(), input(amounts));
+  assert.equal(plain.directCost.toFixed(2), "3000.00");
+  assert.equal(plain.sellingPrice.toFixed(2), "5000.00");
+  assert.equal((plain.inputs as { marketIndex?: { applied?: boolean } }).marketIndex?.applied, false, "an unindexed scenario records that no index applied");
+
+  const indexed = await savePriceSnapshot(db, "price-owner", randomUUID(), { ...input(amounts), marketFactorId: own.id });
+  assert.equal(indexed.directCost.toFixed(2), "3800.00", "1000 materials x1.20, 1000 field labour x1.10 and 1000 permits x1.50");
+  assert.equal(indexed.sellingPrice.toFixed(2), "6333.34", "risk still precedes margin and the price still rounds upward to the cent");
+  const retained = (indexed.inputs as { marketIndex?: { applied?: boolean; marketName?: string; laborMultiplier?: string } }).marketIndex;
+  assert.equal(retained?.applied, true);
+  assert.equal(retained?.marketName, "Synthetic Austin index");
+  assert.equal(retained?.laborMultiplier, "1.100");
+  assert.equal((indexed.inputs as { materials?: string }).materials, "1200.00", "the retained assumptions keep the indexed amounts");
+
+  const before = await db.priceSnapshot.count();
+  await assert.rejects(() => savePriceSnapshot(db, "price-owner", randomUUID(), { ...input(amounts), marketFactorId: foreign.id }), /not available to this company/);
+  assert.equal(await db.priceSnapshot.count(), before, "a refused index writes nothing");
+});

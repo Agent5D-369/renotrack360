@@ -6,7 +6,7 @@ import { directCostFields } from "@/lib/gross-margin";
 import { homewysePriceDraft, type SourceContent } from "@/lib/homewyse-catalog";
 import { replacementRateDefaults } from "@/lib/pricing-defaults";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { loadMarketFactors, marketFactorProblem } from "@/lib/market-index";
 import { PageHeader } from "@/components/page-header";
 import { Panel, Button } from "@/components/ui";
 
@@ -17,12 +17,13 @@ export default async function CostIntelligencePage({ searchParams }: { searchPar
   const content = source?.content as SourceContent | undefined;
   const quantity = /^\d{1,6}(\.\d{1,2})?$/.test(query.quantity ?? "") && Number(query.quantity) > 0 ? query.quantity : "1";
   const draft = source && content ? homewysePriceDraft(source.id, content, quantity) : null;
-  const [snapshots, company] = await Promise.all([
+  const [snapshots, company, marketFactors] = await Promise.all([
     prisma.priceSnapshot.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: "desc" }, take: 20 }),
     prisma.organization.findUniqueOrThrow({
       where: { id: actor.organizationId },
       select: { defaultTargetMarginPercent: true, ownerExceptionMarginPercent: true },
     }),
+    loadMarketFactors(prisma, actor.organizationId),
   ]);
   const defaultMargin = Number(company.defaultTargetMarginPercent);
   const exceptionMargin = Number(company.ownerExceptionMarginPercent);
@@ -61,6 +62,26 @@ export default async function CostIntelligencePage({ searchParams }: { searchPar
             <label className="text-sm">Risk allowance (%)<input name="riskPercent" required type="number" min="0" max="100" step="0.01" inputMode="decimal" className={inputClass} /></label>
             <label className="text-sm">Target gross margin (%)<input name="targetMarginPercent" required type="number" min="0" max="99.99" step="0.01" defaultValue={defaultMargin} inputMode="decimal" className={inputClass} /></label>
           </div>
+          <fieldset className="rounded-md border border-border p-3">
+            <legend className="px-1 text-sm font-semibold">Geographic market index</legend>
+            <label className="block text-sm">Market
+              <select name="marketFactorId" defaultValue="" className={inputClass}>
+                <option value="">No market index (multipliers of 1, current behaviour)</option>
+                {marketFactors.map(factor => {
+                  const problem = marketFactorProblem(factor);
+                  const multipliers = `labor ×${Number(factor.laborMultiplier)}, material ×${Number(factor.materialMultiplier)}, permit ×${Number(factor.permitMultiplier)}`;
+                  return <option key={factor.id} value={factor.id} disabled={Boolean(problem)}>
+                    {factor.marketName}{factor.zipPrefix ? ` (${factor.zipPrefix})` : ""} — {problem ? `unusable: ${problem}` : multipliers}
+                  </option>;
+                })}
+              </select>
+            </label>
+            <p className="mt-2 text-xs text-muted-foreground">
+              {marketFactors.length
+                ? "Labour applies to crew field labour and to the owner field and project PM rates. Material applies to materials. Permit applies to permits, engineering and design. Subcontractors, equipment, protection and other direct costs are not changed. The applied index is retained with the saved scenario."
+                : "No active market cost factors are configured for this company, so no index can be applied. Add market factors on the cost intelligence page first."}
+            </p>
+          </fieldset>
           <label className="text-sm font-semibold">Cost and risk basis<textarea name="basis" defaultValue={draft?.basis} required minLength={10} maxLength={4000} rows={4} className={inputClass} placeholder="Record quantities, current bids, labor hours and replacement rates, allowances, known exclusions and the reason for the risk allowance." /></label>
           <fieldset className="rounded-md border border-border p-3">
             <legend className="px-1 text-sm font-semibold">{`Owner exception below ${exceptionMargin}% margin`}</legend>
