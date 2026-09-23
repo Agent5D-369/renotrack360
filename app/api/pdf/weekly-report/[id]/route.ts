@@ -1,20 +1,21 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
 import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
 
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  const actor = await requireStaff();
   try {
     const { id } = await params;
     const report = await prisma.weeklyReport.findUnique({
       where: { id },
       include: { job: { include: { clientProfile: true, property: true, organization: true } } }
     });
-    if (!report || report.job.organizationId !== DEFAULT_ORG_ID) return NextResponse.json({ error: "Weekly report not found" }, { status: 404 });
+    // Compare against the acting staff member's verified company rather than a hardcoded org id.
+    if (!report || report.job.organizationId !== actor.organizationId) return NextResponse.json({ error: "Weekly report not found" }, { status: 404 });
     const org = report.job.organization;
 
     const pdf = await buildDocument({

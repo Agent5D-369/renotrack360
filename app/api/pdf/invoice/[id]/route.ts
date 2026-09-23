@@ -1,5 +1,6 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
+import { invoiceInOrganization } from "@/lib/delivery-scope";
 import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
@@ -7,12 +8,17 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  const actor = await requireStaff();
   const { id } = await params;
-  const invoice = await prisma.invoice.findUniqueOrThrow({
-    where: { id },
-    include: { clientProfile: true, job: { include: { property: true, organization: true } } }
+  // Company isolation: this route previously read any invoice id and branded it with an arbitrary
+  // organization, so one company could export another company's invoice.
+  const invoice = await prisma.invoice.findFirst({
+    where: invoiceInOrganization(actor.organizationId, { id }),
+    include: { clientProfile: { include: { organization: true } }, job: { include: { property: true, organization: true } } }
   });
-  const org = invoice.job?.organization ?? await prisma.organization.findFirstOrThrow();
+  if (!invoice) return NextResponse.json({ error: "Invoice not found" }, { status: 404 });
+  const org = invoice.job?.organization ?? invoice.clientProfile?.organization
+    ?? await prisma.organization.findUniqueOrThrow({ where: { id: actor.organizationId } });
   const pdf = await buildDocument({
     title: "Invoice",
     number: invoice.invoiceNumber,

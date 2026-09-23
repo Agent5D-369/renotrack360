@@ -1,5 +1,6 @@
 
-import { staffApiDenial } from "@/lib/staff-access";
+import { requireStaff, staffApiDenial } from "@/lib/staff-access";
+import { quoteInOrganization } from "@/lib/company-scope";
 import { NextResponse } from "next/server";
 import { buildDocument } from "@/lib/pdf";
 import { prisma } from "@/lib/prisma";
@@ -7,11 +8,14 @@ import { prisma } from "@/lib/prisma";
 export async function GET(_: Request, { params }: { params: Promise<{ id: string }> }) {
   const denied = await staffApiDenial();
   if (denied) return denied;
+  const actor = await requireStaff();
   const { id } = await params;
-  const quote = await prisma.quote.findUniqueOrThrow({
-    where: { id },
+  // Company isolation: this route previously read any quote id, including another company's pricing.
+  const quote = await prisma.quote.findFirst({
+    where: quoteInOrganization(actor.organizationId, { id }),
     include: { clientProfile: true, property: true, lineItems: true, organization: true }
   });
+  if (!quote) return NextResponse.json({ error: "Estimate not found" }, { status: 404 });
   const org = quote.organization;
   const pdf = await buildDocument({
     title: "Renovation Estimate",
