@@ -1,4 +1,6 @@
 import { requireStaffPage } from "@/lib/staff-access";
+import { clientApprovalInOrganization } from "@/lib/delivery-scope";
+import { estimateInOrganization } from "@/lib/company-scope";
 import { PageHeader } from "@/components/page-header";
 import { StatusPill } from "@/components/status-pill";
 import { Panel } from "@/components/ui";
@@ -6,9 +8,10 @@ import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 export default async function ApprovalsPage() {
-  await requireStaffPage();
-  const approvals = await prisma.clientApproval.findMany({ include: { estimate: { include: { clientProfile: true } } }, orderBy: { updatedAt: "desc" } });
-  const options = await prisma.estimateOption.findMany({ include: { estimate: true }, orderBy: { sortOrder: "asc" } });
+  const actor = await requireStaffPage();
+  const organizationId = actor.organizationId;
+  const approvals = await prisma.clientApproval.findMany({ where: clientApprovalInOrganization(organizationId), include: { estimate: { include: { clientProfile: true } } }, orderBy: { updatedAt: "desc" } });
+  const options = await prisma.estimateOption.findMany({ where: { estimate: estimateInOrganization(organizationId) }, include: { estimate: true }, orderBy: { sortOrder: "asc" } });
 
   return (
     <>

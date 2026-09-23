@@ -132,6 +132,28 @@ export function selectionItemInOrganization(
   return { AND: [{ selectionSheet: selectionSheetInOrganization(verifiedOrganizationId(organizationId)) }, where] };
 }
 
+/**
+ * Approvals carry the client capability token, so an approval that cannot be attributed to a
+ * company is not shown to anyone rather than shown to everyone. Only the three relations that
+ * actually reach a company are accepted: the estimate behind it, the selection item behind it,
+ * and the reviewed change-order snapshot behind it (the change-order link is a scalar without a
+ * relation, so it is reached through its snapshot).
+ */
+export function clientApprovalInOrganization(
+  organizationId: string,
+  where: Prisma.ClientApprovalWhereInput = {},
+): Prisma.ClientApprovalWhereInput {
+  const id = verifiedOrganizationId(organizationId);
+  return { AND: [
+    { OR: [
+      { estimate: estimateInOrganization(id) },
+      { selectionItem: selectionItemInOrganization(id) },
+      { snapshot: { job: jobInOrganization(id) } },
+    ] },
+    where,
+  ] };
+}
+
 export function feedbackRequestInOrganization(
   organizationId: string,
   where: Prisma.FeedbackRequestWhereInput = {},

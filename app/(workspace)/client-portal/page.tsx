@@ -1,6 +1,8 @@
 import { requireStaffPage } from "@/lib/staff-access";
 ﻿import Link from "next/link";
 import { generateJobPortalToken } from "@/app/actions";
+import { jobInOrganization } from "@/lib/company-scope";
+import { clientApprovalInOrganization, selectionItemInOrganization } from "@/lib/delivery-scope";
 import { PageHeader } from "@/components/page-header";
 import { Panel } from "@/components/ui";
 import { StatusPill } from "@/components/status-pill";
@@ -10,12 +12,13 @@ import { prisma } from "@/lib/prisma";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://renotrack360.com";
 
 export default async function ClientPortalPage() {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
+  const organizationId = actor.organizationId;
   const now = new Date();
 
   const [activeJobs, approvals, overdueSelections] = await Promise.all([
     prisma.job.findMany({
-      where: { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } },
+      where: jobInOrganization(organizationId, { jobStatus: { notIn: ["COMPLETE", "WARRANTY_FOLLOW_UP"] } }),
       include: {
         clientProfile: true,
         property: true,
@@ -35,16 +38,16 @@ export default async function ClientPortalPage() {
       orderBy: { updatedAt: "desc" },
     }),
     prisma.clientApproval.findMany({
-      where: { status: { in: ["SENT", "VIEWED"] } },
+      where: clientApprovalInOrganization(organizationId, { status: { in: ["SENT", "VIEWED"] } }),
       include: { selectionItem: true },
       orderBy: { sentAt: "desc" },
       take: 20,
     }),
     prisma.selectionItem.count({
-      where: {
+      where: selectionItemInOrganization(organizationId, {
         requiredByDate: { lt: now },
         decisionStatus: { in: ["NOT_STARTED", "OPTIONS_SENT"] },
-      },
+      }),
     }),
   ]);
 
