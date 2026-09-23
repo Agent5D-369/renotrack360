@@ -4,7 +4,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:
  * Operator-managed encryption for customer bring-your-own API keys.
  *
  * Stored values are self-describing so a key can be rotated without a data migration:
- * `aisecret.v1.<keyId>.<iv>.<tag>.<ciphertext>` with base64url parts.
+ * `v1.<keyId>.<iv>.<tag>.<ciphertext>` with base64url parts.
  *
  * Plaintext keys are never returned to a form, a log or a vault note. Callers may
  * only encrypt on write and decrypt in the server runtime at request time.
