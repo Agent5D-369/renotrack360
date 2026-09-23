@@ -16,6 +16,33 @@ import {
 export const COMPANY_EXPORT_VERSION = 1;
 
 /**
+ * Render one resource as CSV. Nested objects and arrays are kept as JSON text inside their cell
+ * rather than flattened, so nothing is silently dropped and the file stays readable in a
+ * spreadsheet. Values are quoted per RFC 4180.
+ */
+export function resourceToCsv(rows: readonly Record<string, unknown>[]): string {
+  const columns = [...new Set(rows.flatMap(row => Object.keys(row)))].sort();
+  const cell = (value: unknown) => {
+    if (value === null || value === undefined) return "";
+    const text = typeof value === "object" ? JSON.stringify(value) : String(value);
+    return `"${text.replace(/"/g, '""')}"`;
+  };
+  return [columns.join(","), ...rows.map(row => columns.map(column => cell(row[column])).join(","))].join("\n") + "\n";
+}
+
+/** Resource names a caller may request individually. */
+export const EXPORTABLE_RESOURCES = [
+  "users", "memberships", "profiles", "properties", "leads", "quotes", "estimates", "jobs",
+  "phases", "tasks", "fieldReports", "jobPhotos", "invoices", "payments", "changeOrders",
+  "selectionSheets", "selectionItems", "workPackages", "weeklyReports", "costCatalogItems",
+  "priceSnapshots", "laborRates", "marketCostFactors", "materialItems", "materialAllowances",
+  "vendorQuotes", "actualCosts", "projectTemplates", "teamCircles", "dropdownOptions",
+  "agreementTemplates", "agreements", "serviceTemplates", "checklistTemplates", "aiAgents",
+  "aiProviderConfigs", "aiUsageLogs", "fileAssets", "auditEvents",
+] as const;
+export type ExportableResource = typeof EXPORTABLE_RESOURCES[number];
+
+/**
  * A company's own records, assembled for self-service download.
  *
  * Two rules shape this list. It contains only rows belonging to the requesting company, using the

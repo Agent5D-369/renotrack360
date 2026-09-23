@@ -40,6 +40,12 @@ const noEmail = args.includes("--no-email");
 
 /** Read the platform mail credentials at send time; never persist them. */
 function mailCredentials() {
+  // Container-friendly first: the platform passes these in the environment and has no CLI.
+  const envKey = process.env.RESEND_API_KEY;
+  const envTo = process.env.RENOTRACK_ALERT_EMAIL ?? process.env.ADMIN_EMAIL;
+  if (envKey && envTo) {
+    return {key: envKey, to: envTo, from: process.env.RESEND_FROM_EMAIL ?? "noreply@renotrack360.com"};
+  }
   const cli = process.env.RAILWAY_CLI ?? "C:/Users/rbroi/AppData/Roaming/npm/node_modules/@railway/cli/bin/railway.js";
   const project = process.env.RENOTRACK_PROJECT_ID ?? "0b45fa74-d228-4db9-8d76-c929c17690f7";
   const environment = process.env.RENOTRACK_ENVIRONMENT_ID ?? "6d1adb4e-01f4-4005-98b6-680588d576f9";

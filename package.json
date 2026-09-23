@@ -37,7 +37,9 @@
     "test:report-guide": "node scripts/test-access.mjs report-guide",
     "test:company-scope": "node scripts/test-access.mjs company-scope",
     "test:delivery-scope": "node scripts/test-access.mjs delivery-scope",
-    "test:token-surface": "node scripts/test-access.mjs token-surface"
+    "test:token-surface": "node scripts/test-access.mjs token-surface",
+    "monitor:health": "node scripts/health-monitor.mjs",
+    "backup:production": "node scripts/backup-production.mjs"
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.7.4",
