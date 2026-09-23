@@ -91,3 +91,32 @@ rehearse their forward migrations on a restored copy before applying changes.
 No old migration, SaaS record, contract, media reference or business feature is
 deleted by this unit. Access controls, durable private media, financial reconciliation
 and the new versioned work engine remain separate implementation units.
+
+## Apply schema changes yourself, before the release (2026-09-23)
+
+`railway.json` keeps `startCommand: "npm start"` on purpose. An automatic
+`prisma db push --accept-data-loss` was removed earlier so that a deploy can never
+alter production schema by itself. Migration application is therefore a deliberate,
+separate step, and a release that carries a new column will start against a database
+that does not have it until someone applies it.
+
+Learned the hard way in WU022: the settings page failed on every request in production
+with "The column Organization.defaultPaymentSchedule does not exist" until the column
+was added directly. The app was otherwise healthy, so the failure was narrow and silent
+rather than obvious.
+
+Required for any release containing a change under `prisma/migrations/`:
+
+1. `node .preservation/production-migrate-deploy.mjs` - runs `prisma migrate deploy`
+   against the database service public URL. Idempotent; additive migrations only.
+2. `node .preservation/production-migration-status.mjs` - confirm "Database schema is
+   up to date" with zero pending migrations.
+3. Only then `railway up` from the exported release, and re-run the read-only live
+   verification.
+
+Do not put `prisma migrate deploy` into `startCommand`. It was tried on 2026-09-23 and
+the deployment FAILED while the previous release kept serving: `prisma` is a
+devDependency, so the runtime image has no CLI and `npx` tried to fetch it during
+startup, past the healthcheck window. To automate this later, move `prisma` into
+`dependencies` or use a pre-deploy command, and prove it with a real deploy before
+trusting it.
