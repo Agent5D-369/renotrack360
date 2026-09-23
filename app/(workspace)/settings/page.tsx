@@ -370,6 +370,29 @@ export default async function SettingsPage() {
         </Panel>
       </div>
 
+      {/* ── Your data ──────────────────────────────────────────────────────── */}
+      <div className="mb-8">
+        <h2 className="mb-1 text-lg font-bold">Your data</h2>
+        <p className="mb-5 text-sm text-muted-foreground">
+          Download a copy of everything this company has in RenoTrack360 whenever you want it. The
+          file is scoped to your company, and taking a copy is recorded in the audit trail.
+        </p>
+        <Panel className="p-5">
+          <a
+            href="/api/export"
+            className="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90"
+          >
+            Download company data
+          </a>
+          <p className="mt-3 text-xs text-muted-foreground">
+            Includes contacts, properties, estimates, jobs, field reports, invoices, payments, cost
+            records, templates and the audit trail as machine-readable JSON. Excludes credentials,
+            private media files (their details are listed, the files themselves are not) and the
+            imported third-party cost catalog.
+          </p>
+        </Panel>
+      </div>
+
       <Panel className="mt-6 p-6">
         <h2 className="text-lg font-bold">Email sender</h2>
         <p className="mt-1 text-sm text-muted-foreground">
