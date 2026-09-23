@@ -63,6 +63,39 @@ export type ExportableResource = typeof EXPORTABLE_RESOURCES[number];
  * large third-party dataset rather than company-authored data, and private media binaries are stored
  * outside the database, so this export carries their metadata and not the files.
  */
+/**
+ * Exports allowed per company per rolling hour. The audit trail is the source of truth rather than
+ * a separate counter, so the limit cannot drift from the record of what actually happened.
+ */
+export function exportHourlyLimit(environment: Record<string, string | undefined> = process.env): number {
+  const configured = Number(environment.EXPORT_HOURLY_LIMIT ?? 10);
+  return Number.isFinite(configured) && configured >= 1 ? Math.trunc(configured) : 10;
+}
+
+export async function exportAllowance(
+  db: PrismaClient,
+  organizationId: string,
+  environment: Record<string, string | undefined> = process.env,
+) {
+  const limit = exportHourlyLimit(environment);
+  const windowStart = new Date(Date.now() - 60 * 60 * 1000);
+  const recent = await db.auditEvent.findMany({
+    where: { organizationId, action: "COMPANY_DATA_EXPORTED", createdAt: { gte: windowStart } },
+    select: { createdAt: true },
+    orderBy: { createdAt: "asc" },
+  });
+  const used = recent.length;
+  const oldest = recent[0]?.createdAt ?? null;
+  const resetAt = oldest ? new Date(oldest.getTime() + 60 * 60 * 1000) : null;
+  return {
+    limit,
+    used,
+    allowed: used < limit,
+    remaining: Math.max(0, limit - used),
+    retryAfterSeconds: oldest ? Math.max(1, Math.ceil((resetAt!.getTime() - Date.now()) / 1000)) : 0,
+  };
+}
+
 export async function buildCompanyExport(db: PrismaClient, organizationId: string) {
   const where = { organizationId };
   const [

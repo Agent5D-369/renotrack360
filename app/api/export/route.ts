@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireStaff, staffApiDenial } from "@/lib/staff-access";
-import { buildCompanyExport, resourceToCsv, EXPORTABLE_RESOURCES } from "@/lib/company-export";
+import { buildCompanyExport, exportAllowance, resourceToCsv, EXPORTABLE_RESOURCES } from "@/lib/company-export";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +32,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Unknown resource." }, { status: 404 });
   }
 
+  // A member may take their own data, but not without limit: each download is a full read of the
+  // company and produces a file that leaves the platform.
+  const allowance = await exportAllowance(prisma, actor.organizationId);
+  if (!allowance.allowed) {
+    return NextResponse.json(
+      { error: `Export limit reached. This company may export ${allowance.limit} times per hour; try again after ${Math.ceil(allowance.retryAfterSeconds / 60)} minutes.` },
+      { status: 429, headers: { "Retry-After": String(allowance.retryAfterSeconds), "Cache-Control": "no-store" } },
+    );
+  }
+
   const payload = await buildCompanyExport(prisma, actor.organizationId);
   const rows = requested ? (payload.resources as unknown as Record<string, Record<string, unknown>[]>)[requested] : null;
   const stamp = new Date().toISOString().slice(0, 10);
@@ -58,6 +68,7 @@ export async function GET(request: Request) {
         "Content-Type": "text/csv; charset=utf-8",
         "Content-Disposition": `attachment; filename="${slug}-${requested}-${stamp}.csv"`,
         "Cache-Control": "no-store",
+        "X-Export-Remaining": String(allowance.remaining - 1),
       },
     });
   }
@@ -67,6 +78,7 @@ export async function GET(request: Request) {
       "Content-Type": "application/json; charset=utf-8",
       "Content-Disposition": `attachment; filename="${slug}-${requested ?? "renotrack360-export"}-${stamp}.json"`,
       "Cache-Control": "no-store",
+      "X-Export-Remaining": String(allowance.remaining - 1),
     },
   });
 }
