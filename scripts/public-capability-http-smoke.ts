@@ -189,8 +189,10 @@ async function main() {
     assert.equal((await post(`/api/portal/${jobSelf.portalToken}/request`, { message: "   " })).status, 400, "portal request: an empty message must be refused");
     assert.equal((await post(`/api/portal/${jobSelf.portalToken}/request`, { message: requestMarker })).status, 200, "portal request: a valid token may record its own scope request");
     const ownActivity = await db.activity.findFirstOrThrow({ where: { relatedJobId: jobSelf.id, body: requestMarker } });
-    assert.equal(ownActivity.relatedProfileId, ownProfile.id, "portal request: the activity lands on the token's own job and client");
+    // Track before asserting: an assertion thrown between a create and its cleanup registration
+    // strands the row, which is exactly how one orphan activity survived an earlier run.
     cleanup.activityIds.push(ownActivity.id);
+    assert.equal(ownActivity.relatedProfileId, ownProfile.id, "portal request: the activity lands on the token's own job and client");
     assert.equal((await post(`/api/portal/${jobForeign.portalToken}/request`, { message: `${requestMarker}_FOREIGN` })).status, 200, "portal request control: the foreign token writes to its own job");
     const foreignActivity = await db.activity.findFirstOrThrow({ where: { relatedJobId: jobForeign.id, body: `${requestMarker}_FOREIGN` } });
     cleanup.activityIds.push(foreignActivity.id);
