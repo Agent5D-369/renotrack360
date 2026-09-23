@@ -165,8 +165,16 @@ Detection was proven by pointing it at a URL that fails on purpose: it exited 1,
 `ok:false` with the reason, and wrote the alert marker; a healthy run afterwards cleared the
 marker.
 
-Notification: there is no email channel configured for this application yet (SMTP is unset on the
-production company record), so the monitor does not send mail. A daily Codex automation watches
-this log, the alert marker, the backup log and both scheduled tasks, and speaks up only when
-something is wrong. If you would rather have email or SMS alerts, configure SMTP in Settings and
-the same script can send them.
+Notification: the monitor emails through Resend, the same platform transactional sender the
+application uses (`RESEND_API_KEY` and `RESEND_FROM_EMAIL`, already set on the service; the
+recipient is `RENOTRACK_ALERT_EMAIL`, falling back to `ADMIN_EMAIL`). It sends exactly one alert
+when an outage begins and exactly one note when it recovers, so a long outage does not become a
+mail flood. The credential is read from the service environment at send time and is never written
+to disk.
+
+Proven on 2026-09-23 with real messages: a healthy run sent nothing, the first failure of an episode
+sent one alert, a second consecutive failure sent nothing, and the recovery sent one note and cleared
+the marker. `--no-email` suppresses mail when running the monitor by hand.
+
+SMTP in Settings is a separate, per-company channel for client-facing mail; it is not required for
+these operational alerts.
