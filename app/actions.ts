@@ -38,6 +38,7 @@ import { createStripePaymentLink } from "@/lib/stripe";
 import { reportGuideCorrectionSchema } from "@/lib/report-guide-brain";
 import { ReportGuideError, reviewGuideTask } from "@/lib/report-guide";
 import { assertActivityCompanyRelations, assertCompanyRelations, CompanyRelationError } from "@/lib/company-relations";
+import { invoiceInOrganization } from "@/lib/delivery-scope";
 
 function data(formData: FormData) {
   return Object.fromEntries(formData.entries());
@@ -2167,26 +2168,33 @@ export async function updatePhaseStatus(formData: FormData) {
 }
 
 export async function createConsultationDepositInvoice(quoteId: string) {
-  await requireStaff();
-  const quote = await prisma.quote.findUniqueOrThrow({
-    where: { id: quoteId },
-    select: { clientProfileId: true, consultationFee: true, quoteName: true },
-  });
-  const fee = Number(quote.consultationFee ?? 0);
-  if (fee <= 0) throw new Error("No consultation fee set on this quote.");
-  const count = await prisma.invoice.count();
-  const invoice = await prisma.invoice.create({
-    data: {
-      clientProfileId: quote.clientProfileId,
-      invoiceNumber: `CONSULT-${String(count + 1).padStart(4, "0")}`,
-      issueDate: new Date(),
-      dueDate: new Date(Date.now() + 7 * 86_400_000),
-      subtotal: fee,
-      total: fee,
-      balanceDue: fee,
-      status: "SENT",
-      notes: `Paid consultation fee for: ${quote.quoteName}`,
-    },
+  const actor = await requireStaff();
+  const invoice = await prisma.$transaction(async tx => {
+    // The quote must belong to the acting company before an invoice can be raised against it.
+    await assertCompanyRelations(tx, actor.organizationId, { quotes: [quoteId] });
+    const quote = await tx.quote.findUniqueOrThrow({
+      where: { id: quoteId },
+      select: { clientProfileId: true, consultationFee: true, quoteName: true },
+    });
+    const fee = Number(quote.consultationFee ?? 0);
+    if (fee <= 0) throw new Error("No consultation fee set on this quote.");
+    // `Invoice.invoiceNumber` is globally unique in the schema, so the sequence is counted per company
+    // and suffixed. Counting every row in the table made two companies collide on the same number and
+    // published one company's invoice volume inside the other company's numbering.
+    const count = await tx.invoice.count({ where: invoiceInOrganization(actor.organizationId) });
+    return tx.invoice.create({
+      data: {
+        clientProfileId: quote.clientProfileId,
+        invoiceNumber: `CONSULT-${String(count + 1).padStart(4, "0")}-${randomUUID().slice(0, 8).toUpperCase()}`,
+        issueDate: new Date(),
+        dueDate: new Date(Date.now() + 7 * 86_400_000),
+        subtotal: fee,
+        total: fee,
+        balanceDue: fee,
+        status: "SENT",
+        notes: `Paid consultation fee for: ${quote.quoteName}`,
+      },
+    });
   });
   revalidatePath("/invoices");
   redirect(`/invoices/${invoice.id}?flash=Consultation+invoice+created`);

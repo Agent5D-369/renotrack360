@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { DEFAULT_ORG_ID } from "@/lib/constants";
+
+type ReviewBrand = {
+  name: string | null;
+  logoUrl: string | null;
+  brandColor: string | null;
+  companyTagline: string | null;
+  reviewLink: string | null;
+};
+
+const noBrand: ReviewBrand = { name: null, logoUrl: null, brandColor: null, companyTagline: null, reviewLink: null };
 
 export async function GET(_: Request, { params }: { params: Promise<{ token: string }> }) {
   try {
@@ -9,7 +18,7 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
       where: { token },
       include: {
         job: { include: { clientProfile: true, organization: true } },
-        profile: { select: { profileName: true } },
+        profile: { select: { profileName: true, organizationId: true } },
       },
     });
 
@@ -19,18 +28,29 @@ export async function GET(_: Request, { params }: { params: Promise<{ token: str
       return NextResponse.json({ error: "This review link has expired. Contact your contractor for a new one." }, { status: 410 });
     }
 
-    const org = request.job?.organization ?? await prisma.organization.findUnique({ where: { id: DEFAULT_ORG_ID }, select: { reviewLink: true, name: true, logoUrl: true, brandColor: true, companyTagline: true } });
+    // The owning company is derived from the record this token points at, never from the default
+    // organization: a fallback to the default brand showed Flipside's name, logo and review link to a
+    // second company's client. When ownership cannot be established the surface carries no brand at all
+    // rather than someone else's.
+    const owningOrganizationId = request.job?.organizationId ?? request.profile?.organizationId ?? null;
+    const org = owningOrganizationId
+      ? await prisma.organization.findUnique({
+          where: { id: owningOrganizationId },
+          select: { reviewLink: true, name: true, logoUrl: true, brandColor: true, companyTagline: true },
+        })
+      : null;
+    const brand: ReviewBrand = org ?? noBrand;
 
     return NextResponse.json({
       id: request.id,
       requestType: request.requestType,
       jobName: request.job?.jobName,
       clientName: request.profile?.profileName ?? request.job?.clientProfile?.profileName,
-      orgName: org?.name,
-      orgLogoUrl: org?.logoUrl ?? null,
-      orgBrandColor: org?.brandColor ?? null,
-      orgTagline: (org as { companyTagline?: string | null } | null)?.companyTagline ?? null,
-      reviewLink: org?.reviewLink ?? null,
+      orgName: brand.name,
+      orgLogoUrl: brand.logoUrl ?? null,
+      orgBrandColor: brand.brandColor ?? null,
+      orgTagline: brand.companyTagline ?? null,
+      reviewLink: brand.reviewLink ?? null,
       alreadyReceived: ["RECEIVED", "PUBLISHED"].includes(request.status),
       rating: request.rating,
       testimonial: request.publicTestimonial,
