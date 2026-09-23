@@ -145,3 +145,28 @@ retry.
 Known limits, do not overstate them: backups live on this workstation only, so there is no
 offsite copy and the schedule only fires when the machine is on; and the dump covers Postgres
 only, so private media recovery is still unproven.
+
+## Scheduled readiness monitor (2026-09-23)
+
+`scripts/health-monitor.mjs` polls `/api/health` and records the result. Success appends a line
+to `.preservation/monitor/health-log.jsonl` and clears the alert marker. Failure appends a line,
+writes `.preservation/monitor/health-alert.json` describing the reason and when it started, and
+exits nonzero so the scheduler records a failed run.
+
+The Windows scheduled task `RenoTrack360-Health-Monitor` runs it every 15 minutes. Check it with:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName RenoTrack360-Health-Monitor | Select-Object LastRunTime, LastTaskResult
+Test-Path .preservation/monitor/health-alert.json   # present only while the site is failing
+Get-Content .preservation/monitor/health-log.jsonl | Select-Object -Last 3
+```
+
+Detection was proven by pointing it at a URL that fails on purpose: it exited 1, logged
+`ok:false` with the reason, and wrote the alert marker; a healthy run afterwards cleared the
+marker.
+
+Notification: there is no email channel configured for this application yet (SMTP is unset on the
+production company record), so the monitor does not send mail. A daily Codex automation watches
+this log, the alert marker, the backup log and both scheduled tasks, and speaks up only when
+something is wrong. If you would rather have email or SMS alerts, configure SMTP in Settings and
+the same script can send them.
