@@ -58,3 +58,47 @@ test("concurrent adoption retains exactly one immutable version and audit", asyn
   await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "WorkItemVersion" CASCADE'), /immutable/);
   assert.deepEqual(await db.workItemVersion.findUniqueOrThrow({ where: { id: version.id } }), version);
 });
+
+test("the contract refuses a work item that is missing a whole section", () => {
+  // Identity, the cost model, client-facing wording, allowances and operations are required, so an item
+  // cannot be adopted as a bare list of steps and later treated as complete work intelligence.
+  for (const name of ["identity", "costModel", "clientDescription", "allowances", "operations"]) {
+    const candidate = { ...showerPilot } as Record<string, unknown>;
+    delete candidate[name];
+    assert.equal(workItemSchema.safeParse(candidate).success, false, `missing ${name} must be refused`);
+  }
+  assert.equal(workItemSchema.safeParse(showerPilot).success, true, "the complete item stays valid");
+});
+
+test("every ordered step must say what finished means and may state what good work looks like", () => {
+  for (const step of showerPilot.steps) {
+    assert.ok(step.definitionOfDone.length >= 10, `${step.key} states a definition of done`);
+    assert.equal(typeof step.inspectionPoint, "boolean", `${step.key} declares whether a reviewer must inspect`);
+    assert.ok(Array.isArray(step.qualityRequirements), `${step.key} carries a quality list`);
+  }
+  const holdPoints = showerPilot.steps.filter(step => step.holdPoint);
+  assert.ok(holdPoints.length >= 4, "the pilot keeps its pre-cover control points");
+  assert.ok(holdPoints.every(step => step.inspectionPoint), "every hold point is an inspection point");
+  assert.ok(holdPoints.every(step => step.qualityRequirements.length > 0), "hold points state what good work looks like");
+});
+
+test("the cost model carries a basis for every component and invents no numbers", () => {
+  const model = showerPilot.costModel;
+  for (const [name, value] of Object.entries(model)) {
+    if (Array.isArray(value)) { assert.ok(value.length > 0, `${name} is populated`); continue; }
+    assert.ok(String(value).length > 0, `${name} is populated`);
+  }
+  const text = Object.values(model).flat().join(" ");
+  assert.doesNotMatch(text, /\$\d/, "no currency figure appears in the work item cost model");
+  assert.match(model.basis, /no default material price/i, "the basis says where numbers come from");
+  assert.match(model.productivity, /accumulated across completed jobs/i, "productivity is learned, not assumed");
+});
+
+test("operations connect the item to the rest of the job", () => {
+  const operations = showerPilot.operations;
+  assert.ok(operations.predecessors.length > 0 && operations.successors.length > 0, "the item sits in a sequence");
+  assert.ok(operations.crewAssumptions.length > 0, "crew assumptions are stated");
+  assert.ok(operations.selectionRequirements.length > 0, "selection dependencies are stated");
+  assert.match(operations.tradeResponsibility, /QC reviews and releases/i, "review authority is named");
+  assert.notEqual(workItemDigest({ ...showerPilot, operations: { ...operations, successors: ["Changed"] } }), workItemDigest(showerPilot), "changing operations changes the digest");
+});
