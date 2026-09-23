@@ -5,7 +5,22 @@ import { calculateGrossMargin, pricingInputSchema, PRICING_POLICY } from "./gros
 import { hasStaffAccess } from "./staff-policy";
 
 export class PricingError extends Error {}
-export async function savePriceSnapshot(db: PrismaClient, actorId: string, requestId: string, raw: unknown) {
+/** The owner-exception floor is a company setting; 35% remains the fallback when none is supplied. */
+export function ownerExceptionThreshold(value: unknown): number {
+  // A missing setting must never collapse to zero: zero would make every scenario an exception.
+  if (value === null || value === undefined) return 35;
+  if (typeof value === "string" && value.trim() === "") return 35;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 && parsed < 100 ? parsed : 35;
+}
+
+export async function savePriceSnapshot(
+  db: PrismaClient,
+  actorId: string,
+  requestId: string,
+  raw: unknown,
+  options: { ownerExceptionMarginPercent?: unknown } = {}
+) {
   if (!z.string().uuid().safeParse(requestId).success) throw new PricingError("Invalid pricing request. Reload the form.");
   const parsed = pricingInputSchema.safeParse(raw);
   if (!parsed.success) throw new PricingError(parsed.error.issues[0].message);
@@ -17,9 +32,10 @@ export async function savePriceSnapshot(db: PrismaClient, actorId: string, reque
     const user = await tx.user.findUnique({ where: { id: actorId }, include: { memberships: true } });
     const member = user?.memberships.find(value => value.organizationId === user.organizationId);
     if (!hasStaffAccess(user, member ?? null)) throw new PricingError("Staff access denied.");
-    const exception = Number(input.targetMarginPercent) < 35;
+    const exceptionFloor = ownerExceptionThreshold(options.ownerExceptionMarginPercent);
+    const exception = Number(input.targetMarginPercent) < exceptionFloor;
     if (exception && (member!.role !== "OWNER" || user!.role !== "OWNER" || !input.ownerApproval || input.ownerExceptionReason.length < 10)) {
-      throw new PricingError("Below 35% gross margin requires owner approval and a specific exception reason.");
+      throw new PricingError(`Below ${exceptionFloor}% gross margin requires owner approval and a specific exception reason.`);
     }
     // Serialize retries of this request; the unique database constraint remains the final guard.
     await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtextextended(${user!.organizationId + ":" + requestId}, 0))::text`;

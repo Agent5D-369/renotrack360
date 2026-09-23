@@ -1,5 +1,5 @@
 import { requireStaffPage } from "@/lib/staff-access";
-﻿import { updateSettings, updateSettingsTerms, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection, checkAiProviderConnection } from "@/app/actions";
+﻿import { updateSettings, updateSettingsTerms, updateCompanySettings, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection, checkAiProviderConnection } from "@/app/actions";
 import { AiTestButton } from "@/components/ai-test-button";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -233,6 +233,10 @@ export default async function SettingsPage() {
                     defaultValue={config?.baseUrl ?? ""}
                     className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Local or self-hosted endpoints must also be listed by the operator in
+                    AI_LOCAL_ENDPOINT_ALLOWLIST. An unlisted host is refused when saved and again at call time.
+                  </p>
                   <input
                     type="text"
                     name="defaultModel"
@@ -313,6 +317,48 @@ export default async function SettingsPage() {
       </div>
 
       {/* ── Email sender ── */}
+      {/* ── Company operations ─────────────────────────────────────────────── */}
+      <div className="mb-8">
+        <h2 className="mb-1 text-lg font-bold">Company operations</h2>
+        <p className="mb-5 text-sm text-muted-foreground">
+          Defaults this company uses for pricing and approvals. Target margin and the owner exception
+          threshold are applied the next time a cost scenario is saved.
+        </p>
+        <Panel className="p-5">
+          <form action={updateCompanySettings} className="grid gap-4 sm:grid-cols-2">
+            <label className="grid gap-1 text-sm">Default target gross margin (%)
+              <input name="defaultTargetMarginPercent" type="number" min="0" max="99.99" step="0.01" required defaultValue={Number(org.defaultTargetMarginPercent)} className="h-9 rounded-md border border-border px-3" />
+            </label>
+            <label className="grid gap-1 text-sm">Owner exception below margin (%)
+              <input name="ownerExceptionMarginPercent" type="number" min="0" max="99.99" step="0.01" required defaultValue={Number(org.ownerExceptionMarginPercent)} className="h-9 rounded-md border border-border px-3" />
+            </label>
+            <label className="grid gap-1 text-sm">Change-order approval threshold (USD)
+              <input name="changeOrderApprovalThreshold" type="number" min="0" step="0.01" placeholder="No threshold" defaultValue={org.changeOrderApprovalThresholdCents != null ? org.changeOrderApprovalThresholdCents / 100 : ""} className="h-9 rounded-md border border-border px-3" />
+            </label>
+            <label className="grid gap-1 text-sm">Invoice approval threshold (USD)
+              <input name="invoiceApprovalThreshold" type="number" min="0" step="0.01" placeholder="No threshold" defaultValue={org.invoiceApprovalThresholdCents != null ? org.invoiceApprovalThresholdCents / 100 : ""} className="h-9 rounded-md border border-border px-3" />
+            </label>
+            <label className="grid gap-1 text-sm">Notification cadence
+              <select name="notificationCadence" defaultValue={org.notificationCadence} className="h-9 rounded-md border border-border px-2">
+                <option value="DAILY">Daily</option>
+                <option value="WEEKLY">Weekly</option>
+                <option value="BIMONTHLY">Twice monthly</option>
+                <option value="MONTHLY">Monthly</option>
+              </select>
+            </label>
+            <div className="sm:col-span-2">
+              <button type="submit" className="h-9 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground hover:opacity-90">Save company settings</button>
+            </div>
+          </form>
+          <p className="mt-4 border-t border-border pt-4 text-xs text-muted-foreground">
+            Enforced today: the default target margin pre-fills every new cost scenario, and a scenario below
+            the owner exception margin still requires owner approval and a reason.
+            Recorded policy, not yet enforced by automation: the change-order and invoice approval thresholds
+            and the notification cadence are stored for planning and reporting only.
+          </p>
+        </Panel>
+      </div>
+
       <Panel className="mt-6 p-6">
         <h2 className="text-lg font-bold">Email sender</h2>
         <p className="mt-1 text-sm text-muted-foreground">

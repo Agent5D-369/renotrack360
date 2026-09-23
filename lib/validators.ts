@@ -281,3 +281,17 @@ export const settingsTermsSchema = z.object({
   invoiceTerms: z.string().min(2),
   weeklyReportFooter: z.string().min(2)
 });
+
+/** Blank money input means "no configured threshold" rather than zero. */
+const optionalMoney = z.preprocess(
+  value => (value === "" || value === null || value === undefined ? undefined : value),
+  z.coerce.number().min(0).max(10_000_000).optional()
+);
+
+export const companySettingsSchema = z.object({
+  defaultTargetMarginPercent: z.coerce.number().min(0).max(99.99),
+  ownerExceptionMarginPercent: z.coerce.number().min(0).max(99.99),
+  changeOrderApprovalThreshold: optionalMoney,
+  invoiceApprovalThreshold: optionalMoney,
+  notificationCadence: z.enum(["DAILY", "WEEKLY", "BIMONTHLY", "MONTHLY"]).default("WEEKLY")
+});

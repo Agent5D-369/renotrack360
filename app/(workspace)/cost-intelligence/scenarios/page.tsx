@@ -11,13 +11,21 @@ import { PageHeader } from "@/components/page-header";
 import { Panel, Button } from "@/components/ui";
 
 export default async function CostIntelligencePage({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
-  await requireStaffPage();
+  const actor = await requireStaffPage();
   const query = await searchParams;
-  const source = query.source ? await prisma.costSourceVersion.findFirst({ where: { id: query.source, organizationId: DEFAULT_ORG_ID } }) : null;
+  const source = query.source ? await prisma.costSourceVersion.findFirst({ where: { id: query.source, organizationId: actor.organizationId } }) : null;
   const content = source?.content as SourceContent | undefined;
   const quantity = /^\d{1,6}(\.\d{1,2})?$/.test(query.quantity ?? "") && Number(query.quantity) > 0 ? query.quantity : "1";
   const draft = source && content ? homewysePriceDraft(source.id, content, quantity) : null;
-  const snapshots = await prisma.priceSnapshot.findMany({ where: { organizationId: DEFAULT_ORG_ID }, orderBy: { createdAt: "desc" }, take: 20 });
+  const [snapshots, company] = await Promise.all([
+    prisma.priceSnapshot.findMany({ where: { organizationId: actor.organizationId }, orderBy: { createdAt: "desc" }, take: 20 }),
+    prisma.organization.findUniqueOrThrow({
+      where: { id: actor.organizationId },
+      select: { defaultTargetMarginPercent: true, ownerExceptionMarginPercent: true },
+    }),
+  ]);
+  const defaultMargin = Number(company.defaultTargetMarginPercent);
+  const exceptionMargin = Number(company.ownerExceptionMarginPercent);
   const inputClass = "mt-1 w-full rounded-md border border-border bg-white px-3 py-2";
   return <>
     <PageHeader title="Flipside Cost Intelligence" body="Price documented project costs to a true gross margin." />
@@ -51,12 +59,12 @@ export default async function CostIntelligencePage({ searchParams }: { searchPar
           </fieldset>
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-sm">Risk allowance (%)<input name="riskPercent" required type="number" min="0" max="100" step="0.01" inputMode="decimal" className={inputClass} /></label>
-            <label className="text-sm">Target gross margin (%)<input name="targetMarginPercent" required type="number" min="0" max="99.99" step="0.01" defaultValue="40" inputMode="decimal" className={inputClass} /></label>
+            <label className="text-sm">Target gross margin (%)<input name="targetMarginPercent" required type="number" min="0" max="99.99" step="0.01" defaultValue={defaultMargin} inputMode="decimal" className={inputClass} /></label>
           </div>
           <label className="text-sm font-semibold">Cost and risk basis<textarea name="basis" defaultValue={draft?.basis} required minLength={10} maxLength={4000} rows={4} className={inputClass} placeholder="Record quantities, current bids, labor hours and replacement rates, allowances, known exclusions and the reason for the risk allowance." /></label>
           <fieldset className="rounded-md border border-border p-3">
-            <legend className="px-1 text-sm font-semibold">Owner exception below 35% margin</legend>
-            <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="ownerApproval" className="mt-1" />I am the owner and approve this below-35% internal scenario.</label>
+            <legend className="px-1 text-sm font-semibold">{`Owner exception below ${exceptionMargin}% margin`}</legend>
+            <label className="flex items-start gap-2 text-sm"><input type="checkbox" name="ownerApproval" className="mt-1" />I am the owner and approve this below-{exceptionMargin}% internal scenario.</label>
             <label className="mt-3 block text-sm">Exception reason<textarea name="ownerExceptionReason" maxLength={2000} rows={2} className={inputClass} /></label>
             <p className="mt-1 text-xs text-muted-foreground">An administrator cannot approve this exception. Approval is recorded with the scenario.</p>
           </fieldset>

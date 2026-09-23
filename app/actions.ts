@@ -28,6 +28,7 @@ import {
   quoteSchema,
   settingsSchema,
   settingsTermsSchema,
+  companySettingsSchema,
   taskSchema,
   weeklyReportSchema
 } from "@/lib/validators";
@@ -1033,11 +1034,14 @@ export async function createPriceScenario(formData: FormData) {
   await requireStaff();
   const actor = await requireStaff();
   const { savePriceSnapshot, PricingError } = await import("@/lib/price-snapshot");
+  const company = await prisma.organization.findUnique({
+    where: { id: actor.organizationId }, select: { ownerExceptionMarginPercent: true },
+  });
   let id: string;
   try {
     const snapshot = await savePriceSnapshot(prisma, actor.id, String(formData.get("requestId") ?? ""), {
       ...Object.fromEntries(formData), ownerApproval: formData.get("ownerApproval") === "on",
-    });
+    }, { ownerExceptionMarginPercent: company?.ownerExceptionMarginPercent });
     id = snapshot.id;
   } catch (error) {
     if (error instanceof PricingError) redirect(`/cost-intelligence/scenarios?error=${encodeURIComponent(error.message)}`);
@@ -1142,22 +1146,43 @@ export async function updateFinancing(financingId: string, formData: FormData) {
 }
 
 export async function updateSettings(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   let parsed: ReturnType<typeof settingsSchema.parse>;
   try { parsed = settingsSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/settings"); }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await prisma.organization.update({ where: { id: DEFAULT_ORG_ID }, data: parsed as any });
+  await prisma.organization.update({ where: { id: actor.organizationId }, data: parsed as any });
   revalidatePath("/settings");
   redirect("/settings?flash=Settings+saved");
 }
 
 export async function updateSettingsTerms(formData: FormData) {
-  await requireStaff();
+  const actor = await requireStaff();
   let parsed: ReturnType<typeof settingsTermsSchema.parse>;
   try { parsed = settingsTermsSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/settings"); }
-  await prisma.organization.update({ where: { id: DEFAULT_ORG_ID }, data: parsed });
+  await prisma.organization.update({ where: { id: actor.organizationId }, data: parsed });
   revalidatePath("/settings");
   redirect("/settings?flash=Terms+saved");
+}
+
+/** Company operations defaults. Target margin and the owner exception threshold are enforced in pricing. */
+export async function updateCompanySettings(formData: FormData) {
+  const actor = await requireStaff();
+  let parsed: ReturnType<typeof companySettingsSchema.parse>;
+  try { parsed = companySettingsSchema.parse(nullable(data(formData))); } catch (e) { zodCatch(e, "/settings"); }
+  await prisma.organization.update({
+    where: { id: actor.organizationId },
+    data: {
+      defaultTargetMarginPercent: parsed.defaultTargetMarginPercent,
+      ownerExceptionMarginPercent: parsed.ownerExceptionMarginPercent,
+      changeOrderApprovalThresholdCents: parsed.changeOrderApprovalThreshold === undefined ? null : Math.round(parsed.changeOrderApprovalThreshold * 100),
+      invoiceApprovalThresholdCents: parsed.invoiceApprovalThreshold === undefined ? null : Math.round(parsed.invoiceApprovalThreshold * 100),
+      notificationCadence: parsed.notificationCadence,
+    },
+  });
+  revalidatePath("/settings");
+  revalidatePath("/cost-intelligence");
+  revalidatePath("/cost-intelligence/scenarios");
+  redirect("/settings?flash=Company+operations+saved");
 }
 
 export async function createPaymentLink(invoiceId: string) {
