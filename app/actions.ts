@@ -1964,7 +1964,7 @@ export async function generateReviewToken(feedbackRequestId: string) {
 
 export async function saveAiProviderConfig(formData: FormData) {
   const actor = await requireStaff();
-  const { parseAiProviderSettings } = await import("@/lib/ai");
+  const { parseAiProviderSettings, credentialWriteData } = await import("@/lib/ai");
   const provider = String(formData.get("provider") || "");
   if (!Object.values(AiProvider).includes(provider as AiProvider)) redirect("/settings?error=Choose+a+supported+AI+provider");
   const providerEnum = provider as AiProvider;
@@ -1972,17 +1972,79 @@ export async function saveAiProviderConfig(formData: FormData) {
     where: { organizationId_provider: { organizationId: actor.organizationId, provider: providerEnum } },
   });
   let parsed: ReturnType<typeof parseAiProviderSettings>;
-  try { parsed = parseAiProviderSettings(formData, existing?.apiKeySecretRef); }
-  catch { redirect("/settings?error=Check+the+secret+reference,+model,+retention+policy+and+budget.+API+keys+must+be+configured+as+deployment+secrets"); }
+  let credential: ReturnType<typeof credentialWriteData>;
+  try {
+    parsed = parseAiProviderSettings(formData, {
+      apiKeySecretRef: existing?.apiKeySecretRef ?? null,
+      hasStoredCredential: Boolean(existing?.secretCiphertext),
+    });
+    credential = credentialWriteData(parsed.credential);
+  } catch { redirect("/settings?error=Check+the+endpoint,+model,+retention+policy+and+budget.+Stored+company+keys+need+an+operator+encryption+key"); }
+  const { credential: submittedCredential, ...settings } = parsed;
+  void submittedCredential;
   await prisma.$transaction(async (tx) => {
     if (parsed.enabled) await tx.aiProviderConfig.updateMany({ where: { organizationId: actor.organizationId }, data: { enabled: false } });
+    const data = { ...settings, displayName: provider, ...(credential ?? {}) };
     await tx.aiProviderConfig.upsert({
       where: { organizationId_provider: { organizationId: actor.organizationId, provider: providerEnum } },
-      update: { ...parsed, displayName: provider },
-      create: { ...parsed, organizationId: actor.organizationId, displayName: provider },
+      update: data,
+      create: { ...data, organizationId: actor.organizationId },
     });
   });
 
+  revalidatePath("/settings");
+  revalidatePath("/ai-team");
+}
+
+/** Per-agent provider, model and thinking binding. Personality, memory and authority are unaffected. */
+export async function saveAiAgentBinding(agentId: string, formData: FormData) {
+  const actor = await requireStaff();
+  const { parseAgentBindingSettings } = await import("@/lib/ai");
+  let parsed: ReturnType<typeof parseAgentBindingSettings>;
+  try { parsed = parseAgentBindingSettings(formData); }
+  catch { redirect("/ai-team?error=Check+the+provider+connection,+model+and+thinking+mode"); }
+  await prisma.$transaction(async (tx) => {
+    const agent = await tx.aiAgent.findFirst({ where: { id: agentId, organizationId: actor.organizationId }, select: { id: true } });
+    if (!agent) redirect("/ai-team?error=That+agent+is+not+available+to+this+company");
+    if (parsed.providerConfigId) {
+      const connection = await tx.aiProviderConfig.findFirst({
+        where: { id: parsed.providerConfigId, organizationId: actor.organizationId },
+        select: { id: true },
+      });
+      if (!connection) redirect("/ai-team?error=Choose+a+provider+connection+from+this+company");
+    }
+    await tx.aiAgent.update({
+      where: { id: agent.id },
+      data: {
+        providerConfigId: parsed.providerConfigId,
+        model: parsed.model,
+        thinkingMode: parsed.thinkingMode,
+        configVersion: { increment: 1 },
+      },
+    });
+  });
+  revalidatePath("/ai-team");
+}
+
+/** Bounded read-only reachability check for a company connection; records the sanitized outcome. */
+export async function checkAiProviderConnection(providerId: string) {
+  const actor = await requireStaff();
+  const { probeProviderConnection, resolveProviderBaseUrl, resolveProviderCredential } = await import("@/lib/ai");
+  const connection = await prisma.aiProviderConfig.findFirst({
+    where: { id: providerId, organizationId: actor.organizationId },
+  });
+  if (!connection) redirect("/settings?error=That+provider+connection+is+not+available+to+this+company");
+  let result: { status: "ok" | "error"; message: string };
+  try {
+    const credential = resolveProviderCredential(connection);
+    result = await probeProviderConnection({ baseUrl: resolveProviderBaseUrl(connection), credential });
+  } catch {
+    result = { status: "error", message: "The stored credential or endpoint could not be used." };
+  }
+  await prisma.aiProviderConfig.update({
+    where: { id: connection.id },
+    data: { lastCheckedAt: new Date(), lastCheckStatus: result.status, lastCheckMessage: result.message },
+  });
   revalidatePath("/settings");
   revalidatePath("/ai-team");
 }

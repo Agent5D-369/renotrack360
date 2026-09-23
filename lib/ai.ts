@@ -2,6 +2,7 @@ import { AiProvider } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { DEFAULT_ORG_ID } from "@/lib/constants";
+import { AiSecretError, aiSecretFingerprint, decryptStoredAiSecret, encryptAiSecret, currentAiSecretKey, aiSecretKeyId, type AiSecretEnvironment } from "@/lib/ai-secrets";
 
 export interface LLMResult {
   text: string;
@@ -16,6 +17,9 @@ interface AiProviderRuntimeConfig {
   provider: AiProvider;
   defaultModel: string | null;
   apiKeySecretRef: string | null;
+  secretCiphertext?: string | null;
+  baseUrl?: string | null;
+  endpointKind?: string;
   monthlyBudgetCents: number | null;
   allowClientData: boolean;
   dataRetentionMode: string;
@@ -38,6 +42,7 @@ export interface AiRuntimeDependencies {
   getRecordedCostCents(providerId: string): Promise<number>;
   recordUsage(data: AiUsageWrite): Promise<void>;
   fetch: typeof fetch;
+  credentialEnvironment?: AiSecretEnvironment;
 }
 
 export class AiRuntimeError extends Error {
@@ -102,8 +107,14 @@ const budgetDollarsSchema = z.string().trim().regex(/^\d{1,6}(?:\.\d{1,2})?$/);
 type FormValues = Pick<FormData, "get">;
 
 /** Parse Settings form fields without ever returning a resolved credential. */
-export function parseAiProviderSettings(formData: FormValues, existingSecretRef?: string | null) {
-  const submittedRef = String(formData.get("apiKeySecretRef") ?? formData.get("apiKey") ?? "").trim();
+export function parseAiProviderSettings(
+  formData: FormValues,
+  existing: { apiKeySecretRef?: string | null; hasStoredCredential?: boolean } | string | null = {}
+) {
+  const existingSecretRef = typeof existing === "string" ? existing : existing?.apiKeySecretRef ?? null;
+  const hasStoredCredential = typeof existing === "string" ? false : existing?.hasStoredCredential ?? false;
+  const submittedRef = String(formData.get("apiKeySecretRef") ?? "").trim();
+  const submittedKey = String(formData.get("apiKey") ?? "").trim();
   const providerResult = providerSchema.safeParse(String(formData.get("provider") ?? ""));
   if (!providerResult.success) throw new AiSettingsError("Choose a supported AI provider.");
   const provider = providerResult.data;
@@ -117,23 +128,190 @@ export function parseAiProviderSettings(formData: FormValues, existingSecretRef?
   if (referenceResult && !referenceResult.success) {
     throw new AiSettingsError("Use an approved AI environment variable reference.");
   }
+  if (submittedKey && referenceResult?.success) {
+    throw new AiSettingsError("Submit either an environment reference or a provider key, not both.");
+  }
+  if (submittedKey && !/^[\x21-\x7e]{8,4096}$/.test(submittedKey)) {
+    throw new AiSettingsError("Enter a provider key between 8 and 4096 printable characters.");
+  }
   const modelResult = defaultModelValue ? z.string().max(200).safeParse(defaultModelValue) : null;
   if (modelResult && !modelResult.success) throw new AiSettingsError();
   const budgetResult = budgetValue ? budgetDollarsSchema.safeParse(budgetValue) : null;
   if (budgetResult && !budgetResult.success) throw new AiSettingsError("Enter a monthly AI budget from 0 to 999999.99.");
   const apiKeySecretRef = referenceResult?.success ? referenceResult.data : existingSecretRef ?? null;
+  const endpoint = parseProviderEndpoint({
+    provider,
+    endpointKind: String(formData.get("endpointKind") ?? "HOSTED"),
+    baseUrl: String(formData.get("baseUrl") ?? ""),
+  });
   const enabled = formData.get("enabled") === "true" || formData.get("enabled") === "on";
-  if (enabled && !apiKeySecretRef) throw new AiSettingsError("Add a secret reference before enabling this provider.");
+  const credential: AiProviderCredentialInput =
+    submittedKey ? { mode: "inline-key", plaintext: submittedKey }
+    : referenceResult?.success ? { mode: "env-reference", reference: referenceResult.data }
+    : { mode: "preserve" };
+  const hasUsableCredential = credential.mode === "inline-key"
+    || (credential.mode === "env-reference" ? Boolean(credential.reference) : Boolean(apiKeySecretRef) || hasStoredCredential);
+  if (enabled && !hasUsableCredential) throw new AiSettingsError("Add a provider key or secret reference before enabling this provider.");
 
   return {
     provider,
     apiKeySecretRef,
+    credential,
+    endpointKind: endpoint.endpointKind,
+    baseUrl: endpoint.baseUrl,
     defaultModel: modelResult?.success ? modelResult.data : null,
     enabled,
     monthlyBudgetCents: budgetResult?.success ? Math.round(Number(budgetResult.data) * 100) : null,
     allowClientData: formData.get("allowClientData") === "true" || formData.get("allowClientData") === "on",
     dataRetentionMode: retentionResult.data,
   };
+}
+
+export type AiProviderCredentialInput =
+  | { mode: "preserve" }
+  | { mode: "env-reference"; reference: string }
+  | { mode: "inline-key"; plaintext: string };
+
+export type AiEndpointKind = "HOSTED" | "LOCAL";
+export type AiThinkingMode = "AUTO" | "OFF" | "ON";
+
+/** Endpoints are validated without ever accepting an embedded credential or a non-inference scheme. */
+export function parseProviderEndpoint(input: { provider: AiProvider; endpointKind: string; baseUrl: string }): { endpointKind: AiEndpointKind; baseUrl: string | null } {
+  const kindResult = z.enum(["HOSTED", "LOCAL"]).safeParse(input.endpointKind.trim().toUpperCase());
+  if (!kindResult.success) throw new AiSettingsError("Choose a hosted or local inference endpoint.");
+  const endpointKind = kindResult.data;
+  const raw = input.baseUrl.trim().replace(/\/+$/, "");
+  if (!raw) {
+    if (endpointKind === "LOCAL") throw new AiSettingsError("Enter the local inference endpoint URL.");
+    if (!PROVIDER_DEFAULT_BASE_URLS[input.provider]) throw new AiSettingsError("Enter the inference endpoint URL for this provider.");
+    return { endpointKind, baseUrl: null };
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    throw new AiSettingsError("Enter a complete http or https inference endpoint URL.");
+  }
+  if (parsed.username || parsed.password) throw new AiSettingsError("Do not embed credentials in the inference endpoint URL.");
+  if (parsed.search || parsed.hash) throw new AiSettingsError("Enter the inference endpoint without query parameters or fragments.");
+  if (endpointKind === "HOSTED" && parsed.protocol !== "https:") throw new AiSettingsError("Hosted inference endpoints must use https.");
+  if (endpointKind === "LOCAL" && !["http:", "https:"].includes(parsed.protocol)) throw new AiSettingsError("Local inference endpoints must use http or https.");
+  return { endpointKind, baseUrl: raw };
+}
+
+export function resolveProviderBaseUrl(config: { provider: AiProvider; baseUrl?: string | null }): string {
+  const override = (config.baseUrl ?? "").trim().replace(/\/+$/, "");
+  if (override) return override;
+  const fallback = PROVIDER_DEFAULT_BASE_URLS[config.provider];
+  if (!fallback) throw new AiRuntimeError("CONFIGURATION", "This AI provider needs an explicit inference endpoint.");
+  return fallback;
+}
+
+/**
+ * Server-only credential resolution. A customer key stored encrypted takes precedence over an
+ * environment reference; nothing here returns or logs the plaintext value.
+ */
+export function resolveProviderCredential(
+  config: { apiKeySecretRef?: string | null; secretCiphertext?: string | null },
+  options: { environment?: AiSecretEnvironment; decrypt?: (stored: string) => string } = {}
+): string {
+  const environment = options.environment ?? process.env;
+  if (config.secretCiphertext) {
+    const decrypt = options.decrypt ?? ((stored: string) => decryptStoredAiSecret(stored, environment));
+    return decrypt(config.secretCiphertext);
+  }
+  if (config.apiKeySecretRef) return resolveAiSecretRef(config.apiKeySecretRef, environment);
+  throw new AiRuntimeError("CONFIGURATION", "AI provider configuration is incomplete.");
+}
+
+/** Convert a submitted credential into column values. Returns null when the stored credential must be preserved. */
+export function credentialWriteData(
+  credential: AiProviderCredentialInput,
+  options: { environment?: AiSecretEnvironment } = {}
+): { apiKeySecretRef: string | null; secretCiphertext: string | null; secretKeyId: string | null; secretUpdatedAt: Date | null } | null {
+  if (credential.mode === "inline-key") {
+    const key = currentAiSecretKey(options.environment ?? process.env);
+    return {
+      apiKeySecretRef: null,
+      secretCiphertext: encryptAiSecret(credential.plaintext, key),
+      secretKeyId: aiSecretKeyId(key),
+      secretUpdatedAt: new Date(),
+    };
+  }
+  if (credential.mode === "env-reference") {
+    return { apiKeySecretRef: credential.reference, secretCiphertext: null, secretKeyId: null, secretUpdatedAt: null };
+  }
+  return null;
+}
+
+/** Per-agent binding entry. Personality, memory and authority stay outside this setting. */
+export function parseAgentBindingSettings(formData: FormValues) {
+  const providerConfigId = String(formData.get("providerConfigId") ?? "").trim();
+  const model = String(formData.get("model") ?? "").trim();
+  const thinkingResult = z.enum(["AUTO", "OFF", "ON"]).safeParse(String(formData.get("thinkingMode") ?? "AUTO").trim().toUpperCase());
+  if (!thinkingResult.success) throw new AiSettingsError("Choose an automatic, disabled or enabled thinking mode.");
+  if (providerConfigId && !/^[A-Za-z0-9_-]{1,64}$/.test(providerConfigId)) throw new AiSettingsError("Choose a provider connection from this company.");
+  if (model && !/^[A-Za-z0-9._:/-]{1,200}$/.test(model)) throw new AiSettingsError("Enter a valid model identifier.");
+  return { providerConfigId: providerConfigId || null, model: model || null, thinkingMode: thinkingResult.data as AiThinkingMode };
+}
+
+export interface AgentInferenceBinding {
+  agentId: string;
+  workflowKey: string | null;
+  providerConfig: { id: string; provider: AiProvider; defaultModel: string | null } & Record<string, unknown>;
+  model: string;
+  thinkingMode: AiThinkingMode;
+}
+
+/**
+ * Resolve which inference configuration an agent uses. An explicit binding that is missing or
+ * disabled fails closed instead of silently routing data to a different provider.
+ */
+export async function resolveAgentInference(
+  organizationId: string,
+  workflowKey: string,
+  db: Pick<typeof prisma, "aiAgent">
+): Promise<AgentInferenceBinding | null> {
+  const agent = await db.aiAgent.findFirst({
+    where: { organizationId, workflowKey },
+    include: { providerConfig: true },
+  });
+  if (!agent) return null;
+  const thinkingMode = (agent.thinkingMode ?? "AUTO") as AiThinkingMode;
+  if (agent.providerConfigId) {
+    const bound = agent.providerConfig;
+    if (!bound || bound.organizationId !== organizationId) throw new AiRuntimeError("CONFIGURATION", "The bound provider connection is unavailable to this company.");
+    if (!bound.enabled) throw new AiRuntimeError("CONFIGURATION", "The bound provider connection is disabled.");
+    const model = agent.model ?? bound.defaultModel ?? DEFAULT_MODELS[bound.provider] ?? null;
+    if (!model) throw new AiRuntimeError("CONFIGURATION", "The bound provider connection has no model.");
+    return { agentId: agent.id, workflowKey: agent.workflowKey, providerConfig: bound, model, thinkingMode };
+  }
+  const active = await getActiveProvider(organizationId);
+  if (!active) throw new AiRuntimeError("CONFIGURATION", "No AI provider is available.");
+  const model = agent.model ?? active.defaultModel ?? DEFAULT_MODELS[active.provider] ?? null;
+  if (!model) throw new AiRuntimeError("CONFIGURATION", "AI provider configuration is incomplete.");
+  return { agentId: agent.id, workflowKey: agent.workflowKey, providerConfig: active, model, thinkingMode };
+}
+
+export interface ProviderProbeResult { status: "ok" | "error"; message: string; modelCount: number | null }
+
+/** Bounded, read-only reachability check. Provider response bodies are never echoed back. */
+export async function probeProviderConnection(input: { baseUrl: string; credential: string; fetch?: typeof fetch }): Promise<ProviderProbeResult> {
+  const doFetch = input.fetch ?? fetch;
+  try {
+    const response = await doFetch(`${input.baseUrl.replace(/\/+$/, "")}/models`, {
+      method: "GET",
+      signal: AbortSignal.timeout(10_000),
+      headers: { Authorization: `Bearer ${input.credential}`, Accept: "application/json" },
+    });
+    if (!response.ok) return { status: "error", message: `Connection check failed (status ${response.status}).`, modelCount: null };
+    const payload = (await response.json().catch(() => null)) as { data?: unknown } | null;
+    const reported = Array.isArray(payload?.data) ? payload.data.length : null;
+    const modelCount = reported === null ? null : Math.min(reported, 10_000);
+    return { status: "ok", message: modelCount === null ? "Connection verified." : `Connection verified (${modelCount} models reported).`, modelCount };
+  } catch {
+    return { status: "error", message: "The inference endpoint did not answer a bounded check.", modelCount: null };
+  }
 }
 
 const DEFAULT_MODELS: Partial<Record<AiProvider, string>> = {
@@ -143,13 +321,15 @@ const DEFAULT_MODELS: Partial<Record<AiProvider, string>> = {
   XAI: "grok-beta",
   MISTRAL: "mistral-large-latest",
   GOOGLE: "gemini-1.5-pro",
+  DEEPSEEK: "deepseek-flash",
 };
 
-const OPENAI_COMPATIBLE_URLS: Partial<Record<AiProvider, string>> = {
+export const PROVIDER_DEFAULT_BASE_URLS: Partial<Record<AiProvider, string>> = {
   OPENAI: "https://api.openai.com/v1",
   OPENROUTER: "https://openrouter.ai/api/v1",
   XAI: "https://api.x.ai/v1",
   MISTRAL: "https://api.mistral.ai/v1",
+  DEEPSEEK: "https://api.deepseek.com/v1",
 };
 
 // Estimated cents per million tokens [input, output]. Unknown models use the conservative fallback.
@@ -182,7 +362,11 @@ export function resolveAiSecretRef(
 
 export async function getActiveProvider(organizationId = DEFAULT_ORG_ID) {
   return prisma.aiProviderConfig.findFirst({
-    where: { organizationId, enabled: true, apiKeySecretRef: { not: null } },
+    where: {
+      organizationId,
+      enabled: true,
+      OR: [{ apiKeySecretRef: { not: null } }, { secretCiphertext: { not: null } }],
+    },
     orderBy: { updatedAt: "desc" },
   });
 }
@@ -259,7 +443,7 @@ export async function callLLMWithDependencies(
 
   const organizationId = options.organizationId ?? DEFAULT_ORG_ID;
   const provider = await dependencies.getProvider(organizationId);
-  if (!provider?.apiKeySecretRef) throw new AiRuntimeError("CONFIGURATION", "No AI provider is available.");
+  if (!provider) throw new AiRuntimeError("CONFIGURATION", "No AI provider is available.");
   if (options.containsClientData && !provider.allowClientData) {
     throw new AiRuntimeError("CLIENT_DATA_DISABLED", "This provider is not approved for client data.");
   }
@@ -271,7 +455,13 @@ export async function callLLMWithDependencies(
     throw new AiRuntimeError("BUDGET_REACHED", "The AI monthly budget has been reached.");
   }
 
-  const apiKey = resolveAiSecretRef(provider.apiKeySecretRef);
+  let apiKey: string;
+  try {
+    apiKey = resolveProviderCredential(provider, dependencies.credentialEnvironment ? { environment: dependencies.credentialEnvironment } : {});
+  } catch (error) {
+    if (error instanceof AiSecretError) throw new AiRuntimeError("CONFIGURATION", "The stored AI provider credential is unavailable.");
+    throw error;
+  }
   const model = provider.defaultModel ?? DEFAULT_MODELS[provider.provider];
   if (!model) throw new AiRuntimeError("CONFIGURATION", "AI provider configuration is incomplete.");
 
@@ -303,8 +493,7 @@ export async function callLLMWithDependencies(
     inputTokens = data.usageMetadata?.promptTokenCount ?? 0;
     outputTokens = data.usageMetadata?.candidatesTokenCount ?? 0;
   } else {
-    const baseUrl = OPENAI_COMPATIBLE_URLS[provider.provider];
-    if (!baseUrl) throw new AiRuntimeError("CONFIGURATION", "This AI provider is not supported by the current runtime.");
+    const baseUrl = resolveProviderBaseUrl(provider);
     const data = await providerJson(await dependencies.fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
       signal: AbortSignal.timeout(30_000),

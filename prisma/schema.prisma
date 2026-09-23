@@ -257,6 +257,8 @@ enum AiProvider {
   XAI
   MISTRAL
   LOCAL_CUSTOM
+  DEEPSEEK
+  OPENAI_COMPATIBLE
 }
 
 enum ChecklistEntityType {
@@ -1483,15 +1485,21 @@ model AiAgent {
   purpose        String   @db.Text
   guardrails     String?  @db.Text
   workflowKey    String?
+  providerConfigId String?
+  model            String?
+  thinkingMode     String?
+  taskSettings     Json?
   configVersion  Int      @default(1)
   configuration  Json?
   active         Boolean  @default(true)
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  providerConfig AiProviderConfig? @relation("AgentProviderBinding", fields: [providerConfigId], references: [id], onDelete: SetNull)
   tasks          AiTask[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
   @@unique([organizationId, workflowKey])
+  @@index([organizationId, providerConfigId])
 }
 
 model AiProviderConfig {
@@ -1503,12 +1511,21 @@ model AiProviderConfig {
   defaultModel       String?
   apiKeySecretRef    String?
   baseUrl            String?
+  endpointKind       String       @default("HOSTED")
+  secretCiphertext   String?      @db.Text
+  secretKeyId        String?
+  secretUpdatedAt    DateTime?
+  capabilities       Json?
+  lastCheckedAt      DateTime?
+  lastCheckStatus    String?
+  lastCheckMessage   String?
   monthlyBudgetCents Int?
   allowClientData    Boolean      @default(false)
   dataRetentionMode  String       @default("standard")
   notes              String?      @db.Text
   organization       Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   usageLogs          AiUsageLog[]
+  agentBindings      AiAgent[]    @relation("AgentProviderBinding")
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 

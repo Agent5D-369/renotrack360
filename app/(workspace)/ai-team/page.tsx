@@ -5,6 +5,7 @@ import { Panel } from "@/components/ui";
 import { dateShort } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 import { reportGuideAvailability } from "@/lib/report-guide";
+import { saveAiAgentBinding } from "@/app/actions";
 
 const availabilityMessages: Record<string, string> = {
   ready: "Ready for reviewed weekly-report drafts",
@@ -29,6 +30,7 @@ export default async function AiTeamPage() {
     prisma.aiUsageLog.findMany({ where: { organizationId }, orderBy: { createdAt: "desc" }, take: 8 })
   ]);
   const enabledProviders = providers.filter((provider) => provider.enabled);
+  const providersById = new Map(providers.map((provider) => [provider.id, provider]));
   const tasksNeedingReview = tasks.filter((task) => task.humanReviewRequired && task.status === "NEEDS_REVIEW");
   const agentNames = new Map(agents.map((agent) => [agent.id, agent.agentName]));
 
@@ -80,7 +82,8 @@ export default async function AiTeamPage() {
       <Panel className="mt-5 p-5">
         <h3 className="text-lg font-bold">LLM providers</h3>
         <p className="mt-1 text-sm text-muted-foreground">
-          Provider settings shown here belong to the current company. Secret values are referenced securely and are not displayed.
+          Provider settings shown here belong to the current company. Company keys are encrypted at rest and are never displayed;
+          environment references remain supported for deployment-managed secrets.
         </p>
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {providers.map((provider) => (
@@ -90,6 +93,18 @@ export default async function AiTeamPage() {
                 <StatusPill value={provider.enabled ? "ENABLED" : "DISABLED"} />
               </div>
               <p className="mt-1 text-sm text-muted-foreground">{provider.defaultModel || "No default model set"}</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {provider.endpointKind === "LOCAL" ? "Local or self-hosted endpoint" : "Hosted provider"}
+                {provider.baseUrl ? ` · ${provider.baseUrl}` : ""}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                Credential: {provider.secretCiphertext ? "encrypted company key" : provider.apiKeySecretRef ? "deployment secret reference" : "not set"}
+              </p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {provider.lastCheckedAt
+                  ? `Last check ${dateShort(provider.lastCheckedAt)}: ${provider.lastCheckMessage ?? ""}`
+                  : "No reachability check recorded"}
+              </p>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">{provider.notes}</p>
             </div>
           ))}
@@ -98,14 +113,43 @@ export default async function AiTeamPage() {
       </Panel>
 
       <div className="mt-5 grid gap-4 md:grid-cols-3">
-        {agents.map((agent) => (
-          <Panel key={agent.id} className="p-4">
-            <p className="text-xs font-bold uppercase text-muted-foreground">{agent.roleName}</p>
-            <p className="mt-1 text-lg font-bold">{agent.agentName}</p>
-            <p className="mt-2 text-sm text-muted-foreground">{agent._count.tasks} tasks</p>
-            <p className="mt-3 text-sm leading-6 text-muted-foreground">{agent.purpose}</p>
-          </Panel>
-        ))}
+        {agents.map((agent) => {
+          const bound = agent.providerConfigId ? providersById.get(agent.providerConfigId) : undefined;
+          return (
+            <Panel key={agent.id} className="p-4">
+              <p className="text-xs font-bold uppercase text-muted-foreground">{agent.roleName}</p>
+              <p className="mt-1 text-lg font-bold">{agent.agentName}</p>
+              <p className="mt-2 text-sm text-muted-foreground">{agent._count.tasks} tasks</p>
+              <p className="mt-3 text-sm leading-6 text-muted-foreground">{agent.purpose}</p>
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                Inference: {bound ? bound.displayName : "company default connection"} · {agent.model ?? bound?.defaultModel ?? "connection default model"} · thinking {(agent.thinkingMode ?? "AUTO").toLowerCase()}
+              </p>
+              <form action={saveAiAgentBinding.bind(null, agent.id)} className="mt-3 grid gap-2 border-t border-border pt-3">
+                <select name="providerConfigId" defaultValue={agent.providerConfigId ?? ""} className="h-8 rounded-md border border-border px-2 text-xs">
+                  <option value="">Company default connection</option>
+                  {enabledProviders.map((provider) => (
+                    <option key={provider.id} value={provider.id}>{provider.displayName}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  name="model"
+                  defaultValue={agent.model ?? ""}
+                  placeholder="Model for this agent"
+                  className="h-8 rounded-md border border-border px-2 text-xs outline-none focus:ring-2 focus:ring-primary"
+                />
+                <select name="thinkingMode" defaultValue={agent.thinkingMode ?? "AUTO"} className="h-8 rounded-md border border-border px-2 text-xs">
+                  <option value="AUTO">Thinking: automatic</option>
+                  <option value="OFF">Thinking: off</option>
+                  <option value="ON">Thinking: on</option>
+                </select>
+                <button type="submit" className="h-8 rounded-md border border-border px-3 text-xs font-semibold hover:bg-muted">
+                  Save inference binding
+                </button>
+              </form>
+            </Panel>
+          );
+        })}
         {!agents.length && <Panel className="p-4 text-sm text-muted-foreground">No AI workflows are registered for this company.</Panel>}
       </div>
 

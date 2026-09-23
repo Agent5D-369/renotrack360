@@ -8,12 +8,29 @@ import {
   aiDraftInputSchema,
   assertAiRetentionModeSupported,
   callLLMWithDependencies,
+  credentialWriteData,
   isAiBudgetReached,
+  parseAgentBindingSettings,
   parseAiProviderSettings,
+  parseProviderEndpoint,
+  probeProviderConnection,
   publicAiRuntimeFailure,
+  resolveAgentInference,
+  resolveProviderBaseUrl,
+  resolveProviderCredential,
   resolveAiSecretRef,
   weeklyReportPrompt,
 } from "../lib/ai";
+import {
+  AI_SECRET_KEY_ENV,
+  AiSecretError,
+  aiSecretFingerprint,
+  currentAiSecretKey,
+  decryptAiSecret,
+  decryptStoredAiSecret,
+  encryptAiSecret,
+  parseAiSecretKey,
+} from "../lib/ai-secrets";
 
 const weeklyDraft = {
   type: "weekly-report" as const,
@@ -170,4 +187,198 @@ test("usage-write failure is sanitized after a mocked provider response", async 
   assert.equal(caught.code, "USAGE_LOG");
   assert.doesNotMatch(caught.message, /synthetic-legacy-value|database included/);
   assert.equal(publicAiRuntimeFailure(caught, "The AI connection test failed.").error, "The AI connection test failed.");
+});
+
+const operatorKey = Buffer.alloc(32, 7).toString("base64");
+const operatorEnvironment = { [AI_SECRET_KEY_ENV]: operatorKey };
+
+test("stored company keys round-trip through the operator key and fail closed on tamper or absence", () => {
+  const key = parseAiSecretKey(operatorKey);
+  assert.ok(key && key.length === 32);
+  assert.equal(parseAiSecretKey("too-short"), null);
+  assert.equal(parseAiSecretKey(undefined), null);
+  const stored = encryptAiSecret("synthetic-byok-value", key);
+  assert.notEqual(stored, "synthetic-byok-value");
+  assert.doesNotMatch(stored, /synthetic-byok-value/);
+  assert.equal(decryptAiSecret(stored, [key]), "synthetic-byok-value");
+  assert.equal(decryptStoredAiSecret(stored, operatorEnvironment), "synthetic-byok-value");
+
+  const otherKey = Buffer.alloc(32, 9);
+  assert.throws(() => decryptAiSecret(stored, [otherKey]), AiSecretError);
+  const parts = stored.split(".");
+  const tampered = [...parts.slice(0, 4), Buffer.from("tampered-ciphertext").toString("base64url")].join(".");
+  assert.throws(() => decryptAiSecret(tampered, [key]), AiSecretError);
+  assert.throws(() => decryptStoredAiSecret(stored, {}), AiSecretError);
+  assert.throws(() => currentAiSecretKey({}), AiSecretError);
+  assert.equal(aiSecretFingerprint("synthetic-byok-value").length, 12);
+  assert.doesNotMatch(aiSecretFingerprint("synthetic-byok-value"), /synthetic-byok-value/);
+});
+
+test("settings accept a write-only company key, keep references compatible, and reject ambiguity", () => {
+  const form = new FormData();
+  form.set("provider", "DEEPSEEK");
+  form.set("apiKey", "synthetic-company-key-value");
+  form.set("defaultModel", "deepseek-flash");
+  form.set("endpointKind", "HOSTED");
+  form.set("enabled", "on");
+  const parsed = parseAiProviderSettings(form);
+  assert.deepEqual(parsed.credential, { mode: "inline-key", plaintext: "synthetic-company-key-value" });
+  assert.equal(parsed.endpointKind, "HOSTED");
+  assert.equal(parsed.baseUrl, null);
+  assert.equal("apiKey" in parsed, false, "parsed settings never carry a plaintext field name back to the browser");
+
+  form.set("apiKeySecretRef", "env:AI_PROVIDER_DEEPSEEK_KEY");
+  assert.throws(() => parseAiProviderSettings(form), AiSettingsError);
+  form.set("apiKey", "");
+  assert.deepEqual(parseAiProviderSettings(form).credential, { mode: "env-reference", reference: "env:AI_PROVIDER_DEEPSEEK_KEY" });
+
+  const blank = new FormData();
+  blank.set("provider", "DEEPSEEK");
+  blank.set("endpointKind", "HOSTED");
+  assert.deepEqual(parseAiProviderSettings(blank, { hasStoredCredential: true }).credential, { mode: "preserve" });
+  assert.throws(() => {
+    const enabled = new FormData();
+    enabled.set("provider", "DEEPSEEK");
+    enabled.set("enabled", "on");
+    parseAiProviderSettings(enabled);
+  }, AiSettingsError);
+
+  form.set("apiKey", "short");
+  assert.throws(() => parseAiProviderSettings(form), AiSettingsError);
+});
+
+test("endpoint rules separate hosted https from explicit local endpoints and reject embedded credentials", () => {
+  assert.deepEqual(parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "" }), { endpointKind: "HOSTED", baseUrl: null });
+  assert.deepEqual(parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1/" }), { endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1" });
+  assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "http://api.deepseek.com/v1" }), AiSettingsError);
+  assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "LOCAL", baseUrl: "" }), AiSettingsError);
+  assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "https://user:secret@api.deepseek.com/v1" }), AiSettingsError);
+  assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "https://api.deepseek.com/v1?key=secret" }), AiSettingsError);
+  assert.throws(() => parseProviderEndpoint({ provider: AiProvider.OPENAI_COMPATIBLE, endpointKind: "HOSTED", baseUrl: "" }), AiSettingsError);
+  assert.equal(resolveProviderBaseUrl({ provider: AiProvider.DEEPSEEK, baseUrl: null }), "https://api.deepseek.com/v1");
+  assert.equal(resolveProviderBaseUrl({ provider: AiProvider.OPENAI_COMPATIBLE, baseUrl: "http://127.0.0.1:5000/v1/" }), "http://127.0.0.1:5000/v1");
+  assert.throws(() => resolveProviderBaseUrl({ provider: AiProvider.OPENAI_COMPATIBLE, baseUrl: null }), AiRuntimeError);
+});
+
+test("credential writes encrypt company keys, clear stale ciphertext on a reference, and preserve on blank input", () => {
+  const encrypted = credentialWriteData({ mode: "inline-key", plaintext: "synthetic-company-key-value" }, { environment: operatorEnvironment });
+  assert.ok(encrypted?.secretCiphertext);
+  assert.doesNotMatch(encrypted.secretCiphertext, /synthetic-company-key-value/);
+  assert.equal(encrypted.apiKeySecretRef, null);
+  assert.equal(decryptStoredAiSecret(encrypted.secretCiphertext, operatorEnvironment), "synthetic-company-key-value");
+  assert.deepEqual(credentialWriteData({ mode: "env-reference", reference: "env:AI_PROVIDER_DEEPSEEK_KEY" }), {
+    apiKeySecretRef: "env:AI_PROVIDER_DEEPSEEK_KEY", secretCiphertext: null, secretKeyId: null, secretUpdatedAt: null,
+  });
+  assert.equal(credentialWriteData({ mode: "preserve" }), null);
+  assert.throws(() => credentialWriteData({ mode: "inline-key", plaintext: "synthetic-company-key-value" }, { environment: {} }), AiSecretError);
+});
+
+test("credential resolution prefers the encrypted company key and never falls back silently", () => {
+  const stored = encryptAiSecret("synthetic-company-key-value", Buffer.alloc(32, 7));
+  assert.equal(resolveProviderCredential({ secretCiphertext: stored, apiKeySecretRef: "env:AI_PROVIDER_DEEPSEEK_KEY" }, { environment: operatorEnvironment }), "synthetic-company-key-value");
+  assert.equal(resolveProviderCredential({ apiKeySecretRef: "env:AI_PROVIDER_DEEPSEEK_KEY" }, { environment: { AI_PROVIDER_DEEPSEEK_KEY: "synthetic-reference-value" } }), "synthetic-reference-value");
+  assert.throws(() => resolveProviderCredential({}, {}), AiRuntimeError);
+  assert.throws(() => resolveProviderCredential({ secretCiphertext: stored }, { environment: {} }), AiSecretError);
+});
+
+test("a bound company key reaches only the outbound request and the deepseek endpoint is provider-neutral", async () => {
+  const stored = encryptAiSecret("synthetic-company-key-value", Buffer.alloc(32, 7));
+  let outbound = "";
+  let authorization = "";
+  const deps = dependencies({
+    getProvider: async () => provider({ provider: AiProvider.DEEPSEEK, apiKeySecretRef: null, secretCiphertext: stored, defaultModel: null }),
+    credentialEnvironment: operatorEnvironment,
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      outbound = String(input);
+      authorization = new Headers(init?.headers).get("authorization") ?? "";
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Bounded draft" } }], usage: { prompt_tokens: 4, completion_tokens: 2 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch,
+  });
+  const result = await callLLMWithDependencies("Draft from facts", "weekly-report", 32, {}, deps);
+  assert.equal(outbound, "https://api.deepseek.com/v1/chat/completions");
+  assert.equal(authorization, "Bearer synthetic-company-key-value");
+  assert.equal(result.model, "deepseek-flash");
+  assert.equal(result.provider, "DEEPSEEK");
+});
+
+test("a stored key without the operator key fails closed before any outbound call", async () => {
+  const stored = encryptAiSecret("synthetic-company-key-value", Buffer.alloc(32, 7));
+  let fetchCount = 0;
+  const deps = dependencies({
+    getProvider: async () => provider({ provider: AiProvider.DEEPSEEK, apiKeySecretRef: null, secretCiphertext: stored }),
+    credentialEnvironment: {},
+    fetch: (async () => { fetchCount += 1; return new Response(); }) as typeof fetch,
+  });
+  await assert.rejects(
+    () => callLLMWithDependencies("Draft", "weekly-report", 32, {}, deps),
+    (error: unknown) => error instanceof AiRuntimeError && error.code === "CONFIGURATION"
+  );
+  assert.equal(fetchCount, 0);
+});
+
+test("connection checks stay bounded and never echo provider response bodies", async () => {
+  const ok = await probeProviderConnection({
+    baseUrl: "https://api.deepseek.com/v1",
+    credential: "synthetic-company-key-value",
+    fetch: (async () => new Response(JSON.stringify({ data: [{ id: "deepseek-flash" }, { id: "deepseek-v4-pro" }] }), { status: 200 })) as typeof fetch,
+  });
+  assert.deepEqual(ok, { status: "ok", message: "Connection verified (2 models reported).", modelCount: 2 });
+  const failed = await probeProviderConnection({
+    baseUrl: "http://127.0.0.1:9/v1",
+    credential: "synthetic-company-key-value",
+    fetch: (async () => new Response("echoed synthetic-company-key-value", { status: 401 })) as typeof fetch,
+  });
+  assert.equal(failed.status, "error");
+  assert.doesNotMatch(failed.message, /synthetic-company-key-value|echoed/);
+  const unreachable = await probeProviderConnection({
+    baseUrl: "http://127.0.0.1:9/v1",
+    credential: "synthetic-company-key-value",
+    fetch: (async () => { throw new Error("connect ECONNREFUSED synthetic-company-key-value"); }) as typeof fetch,
+  });
+  assert.equal(unreachable.status, "error");
+  assert.doesNotMatch(unreachable.message, /ECONNREFUSED|synthetic-company-key-value/);
+});
+
+test("agent bindings override the company default while unusable bindings fail closed", async () => {
+  const bound = { id: "connection-a", organizationId: "flipside-org", provider: AiProvider.DEEPSEEK, defaultModel: "deepseek-flash", enabled: true, apiKeySecretRef: "env:AI_PROVIDER_DEEPSEEK_KEY" };
+  const agentRow = (changes: Record<string, unknown> = {}) => ({
+    id: "agent-1", workflowKey: "weekly-report", model: null, thinkingMode: "OFF", providerConfigId: "connection-a", providerConfig: bound, ...changes,
+  });
+  const database = (row: unknown) => ({ aiAgent: { findFirst: async () => row } }) as unknown as Parameters<typeof resolveAgentInference>[2];
+
+  const resolved = await resolveAgentInference("flipside-org", "weekly-report", database(agentRow()));
+  assert.equal(resolved?.providerConfig.id, "connection-a");
+  assert.equal(resolved?.model, "deepseek-flash");
+  assert.equal(resolved?.thinkingMode, "OFF");
+
+  const overridden = await resolveAgentInference("flipside-org", "weekly-report", database(agentRow({ model: "deepseek-v4-pro", thinkingMode: "ON" })));
+  assert.equal(overridden?.model, "deepseek-v4-pro");
+  assert.equal(overridden?.thinkingMode, "ON");
+
+  await assert.rejects(
+    () => resolveAgentInference("flipside-org", "weekly-report", database(agentRow({ providerConfig: { ...bound, enabled: false } }))),
+    (error: unknown) => error instanceof AiRuntimeError && error.code === "CONFIGURATION"
+  );
+  await assert.rejects(
+    () => resolveAgentInference("flipside-org", "weekly-report", database(agentRow({ providerConfig: { ...bound, organizationId: "other-org" } }))),
+    (error: unknown) => error instanceof AiRuntimeError && error.code === "CONFIGURATION"
+  );
+  assert.equal(await resolveAgentInference("flipside-org", "weekly-report", database(null)), null);
+});
+
+test("agent binding entry validates provider choice, model shape and thinking mode", () => {
+  const form = new FormData();
+  form.set("providerConfigId", "connection-a");
+  form.set("model", "deepseek-v4-pro");
+  form.set("thinkingMode", "on");
+  assert.deepEqual(parseAgentBindingSettings(form), { providerConfigId: "connection-a", model: "deepseek-v4-pro", thinkingMode: "ON" });
+  form.set("providerConfigId", "");
+  form.set("model", "");
+  form.set("thinkingMode", "AUTO");
+  assert.deepEqual(parseAgentBindingSettings(form), { providerConfigId: null, model: null, thinkingMode: "AUTO" });
+  form.set("thinkingMode", "sometimes");
+  assert.throws(() => parseAgentBindingSettings(form), AiSettingsError);
+  form.set("thinkingMode", "AUTO");
+  form.set("model", "bad model with spaces");
+  assert.throws(() => parseAgentBindingSettings(form), AiSettingsError);
 });

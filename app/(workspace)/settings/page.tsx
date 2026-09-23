@@ -1,5 +1,5 @@
 import { requireStaffPage } from "@/lib/staff-access";
-﻿import { updateSettings, updateSettingsTerms, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection } from "@/app/actions";
+﻿import { updateSettings, updateSettingsTerms, saveAiProviderConfig, updateSmtpSettings, testSmtpConnection, checkAiProviderConnection } from "@/app/actions";
 import { AiTestButton } from "@/components/ai-test-button";
 import { EntityForm } from "@/components/entity-form";
 import { PageHeader } from "@/components/page-header";
@@ -7,6 +7,7 @@ import { Panel } from "@/components/ui";
 import { appThemes } from "@/lib/constants";
 import { COUNTRIES } from "@/lib/address";
 import { prisma } from "@/lib/prisma";
+import { dateShort } from "@/lib/format";
 import { TeamSection } from "@/components/team-section";
 import { LogoUpload } from "@/components/logo-upload";
 
@@ -16,6 +17,8 @@ const PROVIDERS = [
   { value: "OPENROUTER", label: "OpenRouter", placeholder: "sk-or-..." },
   { value: "XAI", label: "xAI (Grok)", placeholder: "xai-..." },
   { value: "MISTRAL", label: "Mistral", placeholder: "..." },
+  { value: "DEEPSEEK", label: "DeepSeek", placeholder: "sk-..." },
+  { value: "OPENAI_COMPATIBLE", label: "OpenAI-compatible endpoint", placeholder: "Local or self-hosted key" },
 ] as const;
 
 export default async function SettingsPage() {
@@ -183,7 +186,7 @@ export default async function SettingsPage() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {PROVIDERS.map((provider) => {
             const config = aiByProvider.get(provider.value as Parameters<typeof aiByProvider.get>[0]);
-            const hasKey = !!config?.apiKeySecretRef;
+            const hasKey = !!config?.apiKeySecretRef || !!config?.secretCiphertext;
             return (
               <Panel key={provider.value} className={`p-4 ${config?.enabled ? "border-primary/40" : ""}`}>
                 <div className="flex items-center justify-between gap-2 mb-3">
@@ -192,23 +195,48 @@ export default async function SettingsPage() {
                     <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700">Active</span>
                   )}
                   {hasKey && !config?.enabled && (
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">Key saved</span>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-600">
+                      {config?.secretCiphertext ? "Company key saved" : "Key reference saved"}
+                    </span>
                   )}
                 </div>
                 <form action={saveAiProviderConfig} className="grid gap-2">
                   <input type="hidden" name="provider" value={provider.value} />
                   <input
                     type="password"
-                    name="apiKeySecretRef"
-                    placeholder={hasKey ? "Leave blank to keep saved connection" : "env:AI_PROVIDER_OPENAI_KEY"}
+                    name="apiKey"
+                    placeholder={hasKey ? "Leave blank to keep the saved key" : provider.placeholder}
                     autoComplete="new-password"
                     className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
                   />
-                  <p className="text-xs text-muted-foreground">Your deployment administrator must configure the referenced secret. Use env:AI_PROVIDER_… or env:RENOTRACK_AI_….</p>
+                  <input
+                    type="text"
+                    name="apiKeySecretRef"
+                    placeholder="Or reference a deployment secret: env:AI_PROVIDER_…"
+                    className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    A key you type here is encrypted with the operator key and is never shown again.
+                    Leave both fields blank to keep the stored credential.
+                  </p>
+                  <label className="grid gap-1 text-xs font-semibold">
+                    Endpoint type
+                    <select name="endpointKind" defaultValue={config?.endpointKind ?? "HOSTED"} className="h-9 rounded-md border border-border px-2">
+                      <option value="HOSTED">Hosted provider</option>
+                      <option value="LOCAL">Local or self-hosted</option>
+                    </select>
+                  </label>
+                  <input
+                    type="text"
+                    name="baseUrl"
+                    placeholder="Inference base URL (hosted https or local http)"
+                    defaultValue={config?.baseUrl ?? ""}
+                    className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
+                  />
                   <input
                     type="text"
                     name="defaultModel"
-                    placeholder="Default model (optional)"
+                    placeholder="Default model, for example deepseek-flash"
                     defaultValue={config?.defaultModel ?? ""}
                     className="h-9 rounded-md border border-border px-3 text-xs outline-none focus:ring-2 focus:ring-primary"
                   />
@@ -240,6 +268,20 @@ export default async function SettingsPage() {
                     {hasKey ? "Update" : "Save connection"}
                   </button>
                 </form>
+                {config && (
+                  <div className="mt-3 border-t border-border pt-3">
+                    <form action={checkAiProviderConnection.bind(null, config.id)}>
+                      <button type="submit" className="h-8 rounded-md border border-border px-3 text-xs font-semibold hover:bg-muted">
+                        Check connection
+                      </button>
+                    </form>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">
+                      {config.lastCheckedAt
+                        ? `${config.lastCheckStatus === "ok" ? "Verified" : "Check failed"} ${dateShort(config.lastCheckedAt)}: ${config.lastCheckMessage ?? ""}`
+                        : "No reachability check recorded for this connection yet."}
+                    </p>
+                  </div>
+                )}
               </Panel>
             );
           })}
