@@ -52,6 +52,9 @@ test("concurrent adoption retains exactly one immutable version and audit", asyn
   assert.equal(await db.auditEvent.count({ where: { entityId: version.id } }), 1);
   await assert.rejects(() => db.workItemVersion.update({ where: { id: version.id }, data: { name: "Rewritten" } }), /immutable/);
   await assert.rejects(() => db.workItemVersion.delete({ where: { id: version.id } }), /immutable/);
-  await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "WorkItemVersion"'), /immutable/);
+  // See the pricing suite: the plain form is refused by the child foreign key, the cascading form
+  // is what reaches the BEFORE TRUNCATE trigger.
+  await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "WorkItemVersion"'), /immutable|cannot truncate/);
+  await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "WorkItemVersion" CASCADE'), /immutable/);
   assert.deepEqual(await db.workItemVersion.findUniqueOrThrow({ where: { id: version.id } }), version);
 });

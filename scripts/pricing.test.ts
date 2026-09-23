@@ -56,7 +56,11 @@ test("snapshot/audit save once across retries and old scenarios remain unchanged
   assert.deepEqual(await db.priceSnapshot.findUniqueOrThrow({ where: { id: snapshot.id } }), snapshot);
   await assert.rejects(() => db.priceSnapshot.update({ where: { id: snapshot.id }, data: { sellingPrice: "1" } }), /immutable/);
   await assert.rejects(() => db.priceSnapshot.delete({ where: { id: snapshot.id } }), /immutable/);
-  await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "PriceSnapshot"'), /immutable/);
+  // A plain TRUNCATE is refused by the child foreign keys before the immutability trigger can
+  // run; TRUNCATE CASCADE is the path that reaches the BEFORE TRUNCATE trigger itself.
+  await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "PriceSnapshot"'), /immutable|cannot truncate/);
+  await assert.rejects(() => db.$executeRawUnsafe('TRUNCATE TABLE "PriceSnapshot" CASCADE'), /immutable/);
+  assert.ok(await db.priceSnapshot.findUnique({ where: { id: snapshot.id } }), "the snapshot survives both refused truncates");
 });
 
 test("foreign and revoked users cannot save; failed audit leaves no price snapshot", async () => {
