@@ -249,7 +249,7 @@ test("settings accept a write-only company key, keep references compatible, and 
 
 test("endpoint rules separate hosted https from explicit local endpoints and reject embedded credentials", () => {
   assert.deepEqual(parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "" }), { endpointKind: "HOSTED", baseUrl: null });
-  assert.deepEqual(parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1/" }), { endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1" });
+  assert.deepEqual(parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1/" }, { AI_LOCAL_ENDPOINT_ALLOWLIST: "127.0.0.1:11434" }), { endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1" });
   assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "http://api.deepseek.com/v1" }), AiSettingsError);
   assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "LOCAL", baseUrl: "" }), AiSettingsError);
   assert.throws(() => parseProviderEndpoint({ provider: AiProvider.DEEPSEEK, endpointKind: "HOSTED", baseUrl: "https://user:secret@api.deepseek.com/v1" }), AiSettingsError);
@@ -417,4 +417,24 @@ test("an unusable agent binding fails closed instead of falling back to the comp
     () => callLLMWithDependencies("Draft", "weekly-report", 32, {}, deps),
     (error: unknown) => error instanceof AiRuntimeError && error.code === "CONFIGURATION"
   );
+});
+
+test("local endpoints are refused unless the operator allowlists the host", () => {
+  const local = { provider: AiProvider.OPENAI_COMPATIBLE, endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1" };
+  const allowed = { AI_LOCAL_ENDPOINT_ALLOWLIST: " 127.0.0.1:11434 , " };
+  assert.deepEqual(parseProviderEndpoint(local, allowed), { endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1" });
+  assert.deepEqual(parseProviderEndpoint(local, { AI_LOCAL_ENDPOINT_ALLOWLIST: "127.0.0.1" }), { endpointKind: "LOCAL", baseUrl: "http://127.0.0.1:11434/v1" }, "a host entry covers any port on that host");
+  assert.throws(() => parseProviderEndpoint(local, {}), AiSettingsError, "an unset allowlist refuses every local endpoint");
+  assert.throws(() => parseProviderEndpoint(local, { AI_LOCAL_ENDPOINT_ALLOWLIST: "10.0.0.5" }), AiSettingsError);
+  assert.throws(() => parseProviderEndpoint(local, { AI_LOCAL_ENDPOINT_ALLOWLIST: "127.0.0.1:11435" }), AiSettingsError, "a stated port must match");
+  assert.throws(() => parseProviderEndpoint({ ...local, baseUrl: "http://169.254.169.254/v1" }, { AI_LOCAL_ENDPOINT_ALLOWLIST: "127.0.0.1" }), AiSettingsError);
+  assert.deepEqual(parseProviderEndpoint({ provider: AiProvider.OPENAI_COMPATIBLE, endpointKind: "HOSTED", baseUrl: "https://api.example.com/v1" }, {}), { endpointKind: "HOSTED", baseUrl: "https://api.example.com/v1" }, "hosted endpoints are unaffected by the allowlist");
+});
+
+test("a stored local endpoint is re-checked against the allowlist at use time", () => {
+  const stored = { provider: AiProvider.OPENAI_COMPATIBLE, baseUrl: "http://127.0.0.1:11434/v1", endpointKind: "LOCAL" };
+  assert.equal(resolveProviderBaseUrl(stored, { AI_LOCAL_ENDPOINT_ALLOWLIST: "127.0.0.1:11434" }), "http://127.0.0.1:11434/v1");
+  assert.throws(() => resolveProviderBaseUrl(stored, {}), AiRuntimeError, "removing the allowlist disables an already saved connection");
+  assert.throws(() => resolveProviderBaseUrl(stored, { AI_LOCAL_ENDPOINT_ALLOWLIST: "10.0.0.5" }), AiRuntimeError);
+  assert.equal(resolveProviderBaseUrl({ provider: AiProvider.DEEPSEEK, baseUrl: "https://api.deepseek.com/v1", endpointKind: "HOSTED" }, {}), "https://api.deepseek.com/v1");
 });

@@ -180,7 +180,34 @@ export type AiEndpointKind = "HOSTED" | "LOCAL";
 export type AiThinkingMode = "AUTO" | "OFF" | "ON";
 
 /** Endpoints are validated without ever accepting an embedded credential or a non-inference scheme. */
-export function parseProviderEndpoint(input: { provider: AiProvider; endpointKind: string; baseUrl: string }): { endpointKind: AiEndpointKind; baseUrl: string | null } {
+export const AI_LOCAL_ENDPOINT_ALLOWLIST_ENV = "AI_LOCAL_ENDPOINT_ALLOWLIST";
+const LOCAL_ENDPOINT_REFUSAL = "This local inference endpoint is not in the operator allowlist.";
+
+/**
+ * Operator allowlist of local inference hosts, for example "127.0.0.1:11434,ollama.internal".
+ * Unset or empty refuses every local endpoint: a company may not point inference at an arbitrary
+ * host, because the server would otherwise fetch it and post the decrypted credential to it.
+ */
+export function localEndpointAllowlist(environment: AiSecretEnvironment = process.env): string[] {
+  return String(environment[AI_LOCAL_ENDPOINT_ALLOWLIST_ENV] ?? "")
+    .split(",")
+    .map(entry => entry.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/+$/, ""))
+    .filter(Boolean);
+}
+
+/** A local endpoint is usable only when its host, and its port when stated, appear in the allowlist. */
+export function isAllowedLocalEndpoint(url: URL, environment: AiSecretEnvironment = process.env): boolean {
+  if (url.username || url.password) return false;
+  const host = url.hostname.toLowerCase();
+  const port = url.port || (url.protocol === "https:" ? "443" : "80");
+  return localEndpointAllowlist(environment).some(entry => {
+    const [entryHost, entryPort] = entry.split(":");
+    if (!entryHost || entryHost !== host) return false;
+    return entryPort ? entryPort === port : true;
+  });
+}
+
+export function parseProviderEndpoint(input: { provider: AiProvider; endpointKind: string; baseUrl: string }, environment: AiSecretEnvironment = process.env): { endpointKind: AiEndpointKind; baseUrl: string | null } {
   const kindResult = z.enum(["HOSTED", "LOCAL"]).safeParse(input.endpointKind.trim().toUpperCase());
   if (!kindResult.success) throw new AiSettingsError("Choose a hosted or local inference endpoint.");
   const endpointKind = kindResult.data;
@@ -200,12 +227,22 @@ export function parseProviderEndpoint(input: { provider: AiProvider; endpointKin
   if (parsed.search || parsed.hash) throw new AiSettingsError("Enter the inference endpoint without query parameters or fragments.");
   if (endpointKind === "HOSTED" && parsed.protocol !== "https:") throw new AiSettingsError("Hosted inference endpoints must use https.");
   if (endpointKind === "LOCAL" && !["http:", "https:"].includes(parsed.protocol)) throw new AiSettingsError("Local inference endpoints must use http or https.");
+  if (endpointKind === "LOCAL" && !isAllowedLocalEndpoint(parsed, environment)) throw new AiSettingsError(LOCAL_ENDPOINT_REFUSAL);
   return { endpointKind, baseUrl: raw };
 }
 
-export function resolveProviderBaseUrl(config: { provider: AiProvider; baseUrl?: string | null }): string {
+export function resolveProviderBaseUrl(config: { provider: AiProvider; baseUrl?: string | null; endpointKind?: string | null }, environment: AiSecretEnvironment = process.env): string {
   const override = (config.baseUrl ?? "").trim().replace(/\/+$/, "");
-  if (override) return override;
+  if (override) {
+    // Defense in depth: a stored local endpoint is re-checked at use time, so removing a host from
+    // the allowlist takes effect immediately for connections that were already saved.
+    if ((config.endpointKind ?? "HOSTED").trim().toUpperCase() === "LOCAL") {
+      let parsed: URL;
+      try { parsed = new URL(override); } catch { throw new AiRuntimeError("CONFIGURATION", "This AI provider needs an explicit inference endpoint."); }
+      if (!isAllowedLocalEndpoint(parsed, environment)) throw new AiRuntimeError("CONFIGURATION", LOCAL_ENDPOINT_REFUSAL);
+    }
+    return override;
+  }
   const fallback = PROVIDER_DEFAULT_BASE_URLS[config.provider];
   if (!fallback) throw new AiRuntimeError("CONFIGURATION", "This AI provider needs an explicit inference endpoint.");
   return fallback;
