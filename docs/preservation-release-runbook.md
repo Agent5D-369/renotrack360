@@ -120,3 +120,28 @@ devDependency, so the runtime image has no CLI and `npx` tried to fetch it durin
 startup, past the healthcheck window. To automate this later, move `prisma` into
 `dependencies` or use a pre-deploy command, and prove it with a real deploy before
 trusting it.
+
+## Scheduled production backup (2026-09-23)
+
+`scripts/backup-production.mjs` takes a real production backup through
+`scripts/preservation.mjs capture` (pg_dump inside a repeatable-read snapshot, with per-table
+row counts and digests), appends a line to `.preservation/backups/backup-log.jsonl`, and prunes
+older backups beyond the retention count. It never prints a credential and never writes to the
+database. `--dry-run` shows the destination without capturing; `--keep=N` sets retention
+(default 14).
+
+It runs daily at 02:30 through the Windows scheduled task `RenoTrack360-Backup`. Prove it is
+actually running by reading the newest entries in the log, not by trusting the task state:
+
+```powershell
+Get-ScheduledTaskInfo -TaskName RenoTrack360-Backup | Select-Object LastRunTime, LastTaskResult
+Get-Content .preservation/backups/backup-log.jsonl | Select-Object -Last 3
+```
+
+A successful run logs `{"ok":true,...,"tables":110,"rows":2893,...}`. A nonzero `LastTaskResult`
+or an `{"ok":false,...}` line means the backup did not happen; treat that as an incident, not a
+retry.
+
+Known limits, do not overstate them: backups live on this workstation only, so there is no
+offsite copy and the schedule only fires when the machine is on; and the dump covers Postgres
+only, so private media recovery is still unproven.
