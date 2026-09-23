@@ -135,10 +135,15 @@ function files(directory: string): string[] {
 }
 
 test("every staff entrypoint checks authorization before its body", () => {
+  // Routes that are deliberately reachable without a session. Everything else under app/api must
+  // begin with a staff denial; adding a name here is a deliberate decision, not a formality.
   const publicRoutes = new Set([
     "auth/[...nextauth]", "auth/forgot-password", "auth/reset-password", "approve/[token]", "approve/[token]/document",
     "review/[token]", "portal/[token]/request", "portal/[token]/reports/[id]", "stripe/webhook", "waitlist", "waitlist/stats",
     "internal/reset-demo", "invite/accept",
+    // Health is a readiness probe for the deploy platform and any uptime monitor. It answers only
+    // status, database reachability and a timestamp, never customer data, and never writes.
+    "health",
   ]);
   const targets = ["app/actions.ts", ...files("app/(workspace)").filter(file => file.endsWith("page.tsx")),
     ...files("app/api").filter(file => file.endsWith("route.ts") && !publicRoutes.has(file.slice(8, -9)))];
